@@ -3,14 +3,14 @@ import sqlite3
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Set Page Configuration
+# 1. Set Page Configuration (Must be at the very top)
 st.set_page_config(page_title="SSF Enzyme Yield Database", page_icon="🧪", layout="wide")
 
-# 1. Setup SQLite Database
+# 2. Setup SQLite Database
 conn = sqlite3.connect("ssf_database.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# 2. 100% Verified Real Literature Dataset (Pre-Seeded)
+# 3. 100% Verified Real Literature Dataset (Pre-Seeded)
 VERIFIED_SEED_DATA = [
     ("Fungal consortium", "Coffee Husk", "cellulase", 10.0, "U/g dry", 65.0, 5.0, 37.0, 96.0, "Compost", 10.0, "HIGH", "10.1016/j.scitotenv.2017.02.184"),
     ("Aspergillus niger", "Banana Peel", "pectinase", 27.68, "U/mL", 60.0, 5.8, 35.0, 72.0, "Ammonium sulfate", 276.8, "LOW", "PMC4444909"),
@@ -101,7 +101,7 @@ def display_table_with_links(df):
         use_container_width=True
     )
 
-# --- APP LAYOUT ---
+# --- APP LAYOUT & NAVIGATION ---
 st.title("🧪 SSF Enzyme Yield Database (Non-Cereal Residues)")
 
 menu = st.sidebar.selectbox("Navigation Menu", [
@@ -109,7 +109,7 @@ menu = st.sidebar.selectbox("Navigation Menu", [
     "Add Single Record", 
     "Upload CSV Dataset", 
     "Search & Filter", 
-    "Yield Heatmap Matrix", 
+    "Yield Data Visualizations", 
     "Best Conditions Summary"
 ])
 
@@ -133,7 +133,7 @@ elif menu == "Add Single Record":
         temp_c = st.number_input("Temperature (°C)", value=30.0)
         time_hrs = st.number_input("Incubation Hours", value=72.0)
         supplements = st.text_input("Supplements", placeholder="e.g., Peptone (optional)")
-        reference = st.text_input("Citation / DOI (e.g. 10.1016/j.scitotenv.2017.02.184)", placeholder="e.g., 10.1016/j.scitotenv.2017.02.184")
+        reference = st.text_input("Citation / DOI", placeholder="e.g., 10.1016/j.scitotenv.2017.02.184")
         
         submitted = st.form_submit_button("Save to Database")
         if submitted:
@@ -167,70 +167,4 @@ elif menu == "Upload CSV Dataset":
                     org = str(row.get("organism", "")).strip()
                     sub = str(row.get("substrate", "")).strip().title()
                     enz = str(row.get("enzyme", "")).strip().lower()
-                    r_yield = float(row.get("raw_yield", 0))
-                    r_unit = str(row.get("raw_unit", "U/g dry")).strip()
-                    moist = float(row.get("moisture_pct", 50))
-                    ph_val = float(row.get("ph") or 7.0)
-                    temp_val = float(row.get("temp_c") or 30.0)
-                    time_val = float(row.get("time_hrs") or 48.0)
-                    supp = str(row.get("supplements") or "None").strip()
-                    ref = str(row.get("reference") or "Unknown").strip()
-
-                    norm, conf = normalize_yield(r_yield, r_unit, moist)
-
-                    cursor.execute('''
-                    INSERT INTO ssf_experiments (organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct, ph, temp_c, time_hrs, supplements, norm_yield, confidence, reference)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (org, sub, enz, r_yield, r_unit, moist, ph_val, temp_val, time_val, supp, norm, conf, ref))
-                    count += 1
-
-                conn.commit()
-                st.success(f"Successfully imported {count} records into the database!")
-                st.rerun()
-        except Exception as e:
-            st.error(f"Error reading CSV file: {e}")
-
-# Option 4: Search & Filter
-elif menu == "Search & Filter":
-    st.header("Search Database")
-    sub = st.text_input("Substrate Filter")
-    enz = st.text_input("Enzyme Filter")
-    
-    query = "SELECT organism, substrate, enzyme, norm_yield, confidence, ph, temp_c, time_hrs, supplements, reference FROM ssf_experiments WHERE substrate LIKE ? AND enzyme LIKE ? ORDER BY norm_yield DESC"
-    df = pd.read_sql_query(query, conn, params=(f"%{sub}%", f"%{enz}%"))
-    display_table_with_links(df)
-
-# Option 5: Yield Heatmap Matrix
-elif menu == "Yield Heatmap Matrix":
-    st.header("Organism vs Substrate Heatmap")
-    df = pd.read_sql_query("SELECT organism, substrate, norm_yield FROM ssf_experiments", conn)
-    if not df.empty:
-        pivot = df.pivot_table(index="organism", columns="substrate", values="norm_yield", aggfunc="max").fillna(0)
-        fig, ax = plt.subplots(figsize=(8, 5))
-        cax = ax.imshow(pivot, cmap="YlOrRd", aspect="auto")
-        fig.colorbar(cax, label="Yield (U/g dry)")
-        ax.set_xticks(range(len(pivot.columns)))
-        ax.set_xticklabels(pivot.columns, rotation=30, ha="right")
-        ax.set_yticks(range(len(pivot.index)))
-        ax.set_yticklabels(pivot.index)
-        st.pyplot(fig)
-    else:
-        st.warning("No data available yet!")
-
-# Option 6: Best Conditions Summary
-elif menu == "Best Conditions Summary":
-    st.header("Optimal Fermentation Parameters")
-    df = pd.read_sql_query("SELECT substrate, enzyme, organism, norm_yield, ph, temp_c, time_hrs, moisture_pct FROM ssf_experiments", conn)
-    if not df.empty:
-        rows = []
-        for (s, e), group in df.groupby(["substrate", "enzyme"]):
-            top = group.sort_values("norm_yield", ascending=False).head(3)
-            best = top.iloc[0]
-            rows.append({
-                "Substrate": s, "Enzyme": e, "Best Yield (U/g)": best["norm_yield"],
-                "Best Organism": best["organism"], "Avg pH": round(top["ph"].mean(), 1),
-                "Avg Temp (°C)": round(top["temp_c"].mean(), 1), "Avg Hours": round(top["time_hrs"].mean(), 1)
-            })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
-    else:
-        st.warning("No data available yet!")
+                    r
