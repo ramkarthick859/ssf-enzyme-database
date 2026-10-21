@@ -3,14 +3,14 @@ import sqlite3
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# 1. Set Page Configuration (Must be at the very top)
+# 1. Page Configuration
 st.set_page_config(page_title="SSF Enzyme Yield Database", page_icon="🧪", layout="wide")
 
 # 2. Setup SQLite Database
 conn = sqlite3.connect("ssf_database.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# 3. 100% Verified Real Literature Dataset (Pre-Seeded)
+# 3. Verified Seed Data
 VERIFIED_SEED_DATA = [
     ("Fungal consortium", "Coffee Husk", "cellulase", 10.0, "U/g dry", 65.0, 5.0, 37.0, 96.0, "Compost", 10.0, "HIGH", "10.1016/j.scitotenv.2017.02.184"),
     ("Aspergillus niger", "Banana Peel", "pectinase", 27.68, "U/mL", 60.0, 5.8, 35.0, 72.0, "Ammonium sulfate", 276.8, "LOW", "PMC4444909"),
@@ -22,7 +22,6 @@ VERIFIED_SEED_DATA = [
     ("Aspergillus niger", "Orange Peel", "cellulase", 223.0, "U/g dry", 65.0, 5.0, 30.0, 72.0, "None", 223.0, "HIGH", "10.9734/ejnfs/2025/v17i51711"),
 ]
 
-# Create Table and Auto-Seed if Empty
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS ssf_experiments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +42,6 @@ if cursor.fetchone()[0] == 0:
         ''', row)
     conn.commit()
 
-# Helper: Unit Normalization
 def normalize_yield(raw_yield, raw_unit, moisture_pct):
     unit = str(raw_unit).lower().strip()
     raw_yield = float(raw_yield)
@@ -58,7 +56,6 @@ def normalize_yield(raw_yield, raw_unit, moisture_pct):
         return round(raw_yield * 10.0, 2), "LOW"
     return round(raw_yield, 2), "LOW"
 
-# Helper: Convert DOI/PMID to Direct URLs
 def make_clickable_link(ref):
     ref = str(ref).strip()
     if not ref or ref.lower() == "unknown":
@@ -71,7 +68,6 @@ def make_clickable_link(ref):
         return f"https://doi.org/{ref}"
     return f"https://doi.org/{ref}"
 
-# Helper: Display Interactive Data Table with Direct DOI Links
 def display_table_with_links(df):
     if df.empty:
         st.info("No records found.")
@@ -82,10 +78,7 @@ def display_table_with_links(df):
     st.dataframe(
         df,
         column_config={
-            "paper_url": st.column_config.LinkColumn(
-                "Verified Paper Link",
-                display_text="🔗 Open Article / DOI"
-            ),
+            "paper_url": st.column_config.LinkColumn("Verified Paper Link", display_text="🔗 Open Article / DOI"),
             "organism": "Organism",
             "substrate": "Substrate",
             "enzyme": "Enzyme",
@@ -101,7 +94,7 @@ def display_table_with_links(df):
         use_container_width=True
     )
 
-# --- APP LAYOUT & NAVIGATION ---
+# --- APP LAYOUT ---
 st.title("🧪 SSF Enzyme Yield Database (Non-Cereal Residues)")
 
 menu = st.sidebar.selectbox("Navigation Menu", [
@@ -167,4 +160,109 @@ elif menu == "Upload CSV Dataset":
                     org = str(row.get("organism", "")).strip()
                     sub = str(row.get("substrate", "")).strip().title()
                     enz = str(row.get("enzyme", "")).strip().lower()
-                    r
+                    r_yield = float(row.get("raw_yield", 0))
+                    r_unit = str(row.get("raw_unit", "U/g dry")).strip()
+                    moist = float(row.get("moisture_pct", 50))
+                    ph_val = float(row.get("ph") or 7.0)
+                    temp_val = float(row.get("temp_c") or 30.0)
+                    time_val = float(row.get("time_hrs") or 48.0)
+                    supp = str(row.get("supplements") or "None").strip()
+                    ref = str(row.get("reference") or "Unknown").strip()
+
+                    norm, conf = normalize_yield(r_yield, r_unit, moist)
+
+                    cursor.execute('''
+                    INSERT INTO ssf_experiments (organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct, ph, temp_c, time_hrs, supplements, norm_yield, confidence, reference)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (org, sub, enz, r_yield, r_unit, moist, ph_val, temp_val, time_val, supp, norm, conf, ref))
+                    count += 1
+
+                conn.commit()
+                st.success(f"Successfully imported {count} records into the database!")
+                st.rerun()
+        except Exception as e:
+            st.error(f"Error reading CSV file: {e}")
+
+# Option 4: Search & Filter
+elif menu == "Search & Filter":
+    st.header("Search Database")
+    sub = st.text_input("Substrate Filter")
+    enz = st.text_input("Enzyme Filter")
+    
+    query = "SELECT organism, substrate, enzyme, norm_yield, confidence, ph, temp_c, time_hrs, supplements, reference FROM ssf_experiments WHERE substrate LIKE ? AND enzyme LIKE ? ORDER BY norm_yield DESC"
+    df = pd.read_sql_query(query, conn, params=(f"%{sub}%", f"%{enz}%"))
+    display_table_with_links(df)
+
+# Option 5: Yield Visualizations
+elif menu == "Yield Data Visualizations":
+    st.header("Enzyme Yield Data Visualizations")
+    df = pd.read_sql_query("SELECT organism, substrate, enzyme, norm_yield, ph, temp_c, time_hrs FROM ssf_experiments", conn)
+    
+    if not df.empty:
+        chart_type = st.selectbox("Choose Visualization Type:", [
+            "1. Heatmap Matrix (Organism vs Substrate)",
+            "2. Grouped Bar Chart (Top Yields per Substrate)",
+            "3. Box Plot (Yield Spread by Enzyme)",
+            "4. Scatter Plot (pH vs Temperature vs Yield)"
+        ])
+
+        if "1. Heatmap" in chart_type:
+            pivot = df.pivot_table(index="organism", columns="substrate", values="norm_yield", aggfunc="max").fillna(0)
+            fig, ax = plt.subplots(figsize=(8, 4))
+            cax = ax.imshow(pivot, cmap="YlOrRd", aspect="auto")
+            fig.colorbar(cax, label="Yield (U/g dry)")
+            ax.set_xticks(range(len(pivot.columns)))
+            ax.set_xticklabels(pivot.columns, rotation=30, ha="right")
+            ax.set_yticks(range(len(pivot.index)))
+            ax.set_yticklabels(pivot.index)
+            ax.set_title("Organism vs Substrate Yield Heatmap")
+            st.pyplot(fig)
+
+        elif "2. Grouped Bar" in chart_type:
+            fig, ax = plt.subplots(figsize=(8, 4))
+            avg_yield = df.groupby(["substrate", "enzyme"])["norm_yield"].max().unstack().fillna(0)
+            avg_yield.plot(kind="bar", ax=ax)
+            ax.set_ylabel("Yield (U/g dry)")
+            ax.set_xlabel("Non-Cereal Substrate")
+            ax.set_title("Maximum Yield by Substrate and Enzyme")
+            plt.xticks(rotation=30, ha="right")
+            st.pyplot(fig)
+
+        elif "3. Box Plot" in chart_type:
+            fig, ax = plt.subplots(figsize=(8, 4))
+            df.boxplot(column="norm_yield", by="enzyme", ax=ax, grid=False)
+            ax.set_ylabel("Yield (U/g dry)")
+            ax.set_xlabel("Enzyme Category")
+            plt.suptitle("")
+            ax.set_title("Yield Variance per Enzyme Class")
+            st.pyplot(fig)
+
+        elif "4. Scatter Plot" in chart_type:
+            fig, ax = plt.subplots(figsize=(8, 4))
+            scatter = ax.scatter(df["ph"], df["temp_c"], s=df["norm_yield"]*0.8, c=df["norm_yield"], cmap="viridis", alpha=0.7)
+            fig.colorbar(scatter, label="Yield (U/g dry)")
+            ax.set_xlabel("pH")
+            ax.set_ylabel("Temperature (°C)")
+            ax.set_title("Optimal Parameter Clusters (Bubble Size = Yield)")
+            st.pyplot(fig)
+
+    else:
+        st.warning("No data available yet!")
+
+# Option 6: Best Conditions Summary
+elif menu == "Best Conditions Summary":
+    st.header("Optimal Fermentation Parameters")
+    df = pd.read_sql_query("SELECT substrate, enzyme, organism, norm_yield, ph, temp_c, time_hrs, moisture_pct FROM ssf_experiments", conn)
+    if not df.empty:
+        rows = []
+        for (s, e), group in df.groupby(["substrate", "enzyme"]):
+            top = group.sort_values("norm_yield", ascending=False).head(3)
+            best = top.iloc[0]
+            rows.append({
+                "Substrate": s, "Enzyme": e, "Best Yield (U/g)": best["norm_yield"],
+                "Best Organism": best["organism"], "Avg pH": round(top["ph"].mean(), 1),
+                "Avg Temp (°C)": round(top["temp_c"].mean(), 1), "Avg Hours": round(top["time_hrs"].mean(), 1)
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    else:
+        st.warning("No data available yet!")
