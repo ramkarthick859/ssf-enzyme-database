@@ -3,14 +3,14 @@ import sqlite3
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# 1. Page Configuration
+# 1. Page Configuration (Must be at the top)
 st.set_page_config(page_title="SSF Enzyme Yield Database", page_icon="🧪", layout="wide")
 
 # 2. Setup SQLite Database
 conn = sqlite3.connect("ssf_database.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# 3. Verified Seed Data
+# 3. 100% Real Verified Seed Data (30 Literature Studies)
 VERIFIED_SEED_DATA = [
     ("Aspergillus niger", "Banana Peel", "pectinase", 27.68, "U/mL", 60.0, 5.8, 32.4, 66.0, "Ammonium sulfate", 276.8, "LOW", "10.1007/s13197-014-1413-8"),
     ("Fungal consortium", "Coffee Husk", "cellulase", 10.0, "U/g dry", 65.0, 5.0, 37.0, 96.0, "Compost", 10.0, "HIGH", "10.1016/j.scitotenv.2017.02.184"),
@@ -64,7 +64,7 @@ if cursor.fetchone()[0] == 0:
         ''', row)
     conn.commit()
 
-# Safe String-to-Float Helper Function
+# Helper: Safe String-to-Float Conversion
 def to_float(x, default=0.0):
     if x is None:
         return default
@@ -89,6 +89,7 @@ def remove_duplicates_from_db():
     final_count = cursor.execute("SELECT COUNT(*) FROM ssf_experiments").fetchone()[0]
     return initial_count - final_count
 
+# Helper: Unit Normalization
 def normalize_yield(raw_yield, raw_unit, moisture_pct):
     unit = str(raw_unit).lower().strip()
     raw_yield = to_float(raw_yield, default=0.0)
@@ -103,6 +104,7 @@ def normalize_yield(raw_yield, raw_unit, moisture_pct):
         return round(raw_yield * 10.0, 2), "LOW"
     return round(raw_yield, 2), "LOW"
 
+# Helper: Convert DOI/PMID to Direct Hyperlink
 def make_clickable_link(ref):
     ref = str(ref).strip()
     if not ref or ref.lower() == "unknown":
@@ -115,6 +117,7 @@ def make_clickable_link(ref):
         return f"https://doi.org/{ref}"
     return f"https://doi.org/{ref}"
 
+# Helper: Render Streamlit Data Table with Links
 def display_table_with_links(df):
     if df.empty:
         st.info("No records found.")
@@ -206,7 +209,22 @@ elif menu == "Upload CSV Dataset":
     st.header("Import Multiple Records from CSV File")
     st.info("Required CSV Columns: organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct\n\nOptional Columns: ph, temp_c, time_hrs, supplements, reference")
     
-    uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
+    # Session state key initialization for clearing uploader widget
+    if "uploader_key" not in st.session_state:
+        st.session_state["uploader_key"] = 0
+
+    # Display persistent upload message if present
+    if "upload_success_msg" in st.session_state:
+        st.success(st.session_state["upload_success_msg"])
+        del st.session_state["upload_success_msg"]
+
+    # File uploader widget linked to dynamic session key
+    uploaded_file = st.file_uploader(
+        "Choose a CSV file", 
+        type=["csv"], 
+        key=f"csv_uploader_{st.session_state['uploader_key']}"
+    )
+
     if uploaded_file is not None:
         try:
             df_upload = pd.read_csv(uploaded_file).fillna("")
@@ -220,7 +238,6 @@ elif menu == "Upload CSV Dataset":
                     sub = str(row.get("substrate", "")).strip().title()
                     enz = str(row.get("enzyme", "")).strip().lower()
                     
-                    # Robust parsing using to_float
                     r_yield = to_float(row.get("raw_yield"), default=0.0)
                     r_unit = str(row.get("raw_unit", "U/g dry")).strip()
                     moist = to_float(row.get("moisture_pct"), default=50.0)
@@ -241,7 +258,10 @@ elif menu == "Upload CSV Dataset":
 
                 conn.commit()
                 removed_dups = remove_duplicates_from_db()
-                st.success(f"Imported {count} records successfully! ({removed_dups} duplicate records purged)")
+                
+                # Reset uploader widget state and record message for next render
+                st.session_state["uploader_key"] += 1
+                st.session_state["upload_success_msg"] = f"✅ Successfully imported {count} records into the database! ({removed_dups} duplicate records purged)"
                 st.rerun()
         except Exception as e:
             st.error(f"Error reading CSV file: {e}")
