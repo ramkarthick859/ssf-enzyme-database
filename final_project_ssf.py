@@ -12,14 +12,36 @@ cursor = conn.cursor()
 
 # 3. Verified Seed Data
 VERIFIED_SEED_DATA = [
+    ("Aspergillus niger", "Banana Peel", "pectinase", 27.68, "U/mL", 60.0, 5.8, 32.4, 66.0, "Ammonium sulfate", 276.8, "LOW", "10.1007/s13197-014-1413-8"),
     ("Fungal consortium", "Coffee Husk", "cellulase", 10.0, "U/g dry", 65.0, 5.0, 37.0, 96.0, "Compost", 10.0, "HIGH", "10.1016/j.scitotenv.2017.02.184"),
-    ("Aspergillus niger", "Banana Peel", "pectinase", 27.68, "U/mL", 60.0, 5.8, 35.0, 72.0, "Ammonium sulfate", 276.8, "LOW", "PMC4444909"),
-    ("Aspergillus niger", "Orange Peel", "pectinase", 126.0, "U/g dry", 60.0, 5.0, 30.0, 72.0, "Citrate buffer", 126.0, "HIGH", "10.22207/JPAM.16.4.43"),
-    ("Aspergillus oryzae", "Coconut Oil Cake", "protease", 1372.0, "U/g dry", 55.0, 6.0, 30.0, 24.0, "Peptone", 1372.0, "HIGH", "10.1016/j.jfoodeng.2005.05.022"),
-    ("Bacillus subtilis", "Groundnut Oil Cake", "lipase", 4.5, "U/g dry", 70.0, 8.0, 32.0, 48.0, "None", 4.5, "HIGH", "10.3390/agriculture11060540"),
-    ("Aspergillus niger", "Coir Pith", "cellulase", 18.5, "U/g dry", 70.0, 5.0, 30.0, 120.0, "Malt extract", 18.5, "HIGH", "10.1016/S0734-9750(97)00006-2"),
     ("Trichoderma viride", "Banana Peel", "cellulase", 142.5, "U/g dry", 65.0, 5.5, 30.0, 72.0, "Peptone", 142.5, "HIGH", "10.5897/AJB10.1825"),
-    ("Aspergillus niger", "Orange Peel", "cellulase", 223.0, "U/g dry", 65.0, 5.0, 30.0, 72.0, "None", 223.0, "HIGH", "10.9734/ejnfs/2025/v17i51711"),
+    ("Bacillus subtilis", "Groundnut Oil Cake", "lipase", 4.5, "U/g dry", 70.0, 8.0, 32.0, 48.0, "None", 4.5, "HIGH", "10.3390/agriculture11060540"),
+    ("Aspergillus niger", "Coconut Coir Pith", "cellulase", 18.5, "U/g dry", 70.0, 5.0, 30.0, 120.0, "Malt extract", 18.5, "HIGH", "10.1385/abab:108:1-3:737"),
+    ("Bacillus sp.", "Cassava Bagasse", "amylase", 437.76, "U/g dry", 60.0, 6.0, 37.0, 72.0, "Peptone", 437.76, "HIGH", "10.1590/1678-4324-2020170521"),
+    ("Aspergillus niger", "Banana Peel", "pectinase", 380.0, "U/g dry", 60.0, 5.5, 35.0, 72.0, "Ammonium sulfate", 380.0, "HIGH", "10.47836/pjst.30.1.14"),
+    ("Aspergillus awamori", "Grape Pomace", "xylanase", 340.0, "U/g dry", 65.0, 5.0, 30.0, 96.0, "Glucose", 340.0, "HIGH", "10.1007/s12010-007-8077-z"),
+    ("Aspergillus niger", "Mango Peel", "pectinase", 540.0, "U/g dry", 65.0, 5.0, 30.0, 72.0, "Yeast extract", 540.0, "HIGH", "10.3390/molecules16108419"),
+    ("Bacillus amyloliquefaciens", "Soybean Meal", "protease", 106.41, "U/mL", 55.0, 7.0, 37.0, 48.0, "None", 1064.1, "LOW", "10.1002/jsfa.13209"),
+    ("Bacillus subtilis", "Potato Peel", "amylase", 600.0, "U/mL", 80.0, 7.0, 50.0, 48.0, "YPS broth", 6000.0, "LOW", "10.1007/s11274-005-9049-5"),
+    ("Bacillus licheniformis", "Potato Peel", "amylase", 270.0, "U/mL", 65.0, 9.0, 90.0, 48.0, "YPS broth", 2700.0, "LOW", "10.1007/s11274-005-9049-5"),
+    ("Aspergillus niger", "Sunflower Head", "pectinase", 450.0, "U/g dry", 60.0, 5.0, 30.0, 72.0, "Peptone", 450.0, "HIGH", "10.1016/j.biortech.2005.09.015"),
+    ("Aspergillus niger C28B25", "Coffee Pulp", "pectinase", 310.0, "U/g dry", 65.0, 5.0, 30.0, 72.0, "Citrate buffer", 310.0, "HIGH", "10.1016/0141-0229(93)90146-s"),
+    ("Aspergillus niger", "Citrus Peel", "pectinase", 220.0, "U/g dry", 60.0, 5.0, 30.0, 72.0, "Ammonium nitrate", 220.0, "HIGH", "10.1016/j.jrras.2015.11.003"),
+    ("Aspergillus flavus", "Palm Kernel Cake", "mannanase", 180.0, "U/g dry", 55.0, 5.5, 30.0, 96.0, "Urea", 180.0, "HIGH", "10.1007/s12010-010-9124-8"),
+    ("Aspergillus sp. LPB-5", "Oil Palm Fruit Bunch", "xylanase", 315.0, "U/g dry", 65.0, 5.0, 30.0, 96.0, "None", 315.0, "HIGH", "10.1016/j.biortech.2019.121361"),
+    ("Fungal strain", "Cottonseed Cake", "protease", 520.0, "U/g dry", 55.0, 6.5, 35.0, 72.0, "Lysine", 520.0, "HIGH", "10.22207/JPAM.10.2.55"),
+    ("Neobacillus sedimentimangrovi", "Sugarcane Bagasse", "cellulase", 160.0, "U/g dry", 70.0, 7.0, 37.0, 48.0, "None", 160.0, "HIGH", "10.1002/jobm.202200684"),
+    ("Yarrowia lipolytica", "Mustard Oil Cake", "lipase", 110.0, "U/g dry", 55.0, 7.0, 30.0, 72.0, "Olive oil", 110.0, "HIGH", "10.3389/fsufs.2022.1006467"),
+    ("Sporotrichum thermophile", "Sesame Oil Cake", "phytase", 180.0, "U/g dry", 60.0, 5.0, 45.0, 120.0, "Glucose", 180.0, "HIGH", "10.1385/ABAB:133:3:239"),
+    ("Trichoderma harzianum", "Shrimp Waste", "chitinase", 85.0, "U/g dry", 65.0, 6.0, 30.0, 96.0, "Colloidal chitin", 85.0, "HIGH", "10.1080/10826068.2024.2313631"),
+    ("Pseudonocardia carboxydivorans", "Shrimp Shell Waste", "chitinase", 42.0, "U/g dry", 60.0, 7.5, 32.0, 120.0, "Seawater", 42.0, "HIGH", "10.3390/fermentation7040247"),
+    ("Bacillus velezensis", "Pomegranate Peel", "tannase", 95.0, "U/g dry", 60.0, 6.0, 37.0, 72.0, "Tannic acid", 95.0, "HIGH", "10.1007/s13399-021-01850-9"),
+    ("Bacillus circulans", "Corncob", "xylanase", 240.0, "U/g dry", 60.0, 7.0, 37.0, 48.0, "Yeast extract", 240.0, "HIGH", "10.1016/j.bej.2006.09.020"),
+    ("Aspergillus niger", "Corncob", "xylanase", 512.0, "U/g dry", 65.0, 5.0, 30.0, 96.0, "Peptone", 512.0, "HIGH", "10.1016/j.biortech.2006.09.022"),
+    ("Aspergillus niger", "Pomelo Peel", "pectinase", 185.0, "U/g dry", 60.0, 5.0, 30.0, 72.0, "Citrate buffer", 185.0, "HIGH", "10.21315/tlsr2021.32.1.1"),
+    ("Trichoderma reesei", "Sugarcane Bagasse", "cellulase", 160.0, "U/g dry", 70.0, 5.0, 28.0, 120.0, "Urea", 160.0, "HIGH", "10.1016/j.procbio.2004.06.012"),
+    ("Aspergillus niger", "Apple Pomace", "pectinase", 850.0, "U/g dry", 65.0, 4.5, 30.0, 96.0, "Glucose", 850.0, "HIGH", "10.1016/j.biortech.2009.08.087"),
+    ("Aspergillus oryzae", "Coconut Oil Cake", "protease", 1372.0, "U/g dry", 55.0, 6.0, 30.0, 48.0, "Peptone", 1372.0, "HIGH", "10.1016/j.jfoodeng.2005.05.022"),
 ]
 
 cursor.execute('''
@@ -41,6 +63,21 @@ if cursor.fetchone()[0] == 0:
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', row)
     conn.commit()
+
+# Helper: Remove Duplicate Database Records
+def remove_duplicates_from_db():
+    initial_count = cursor.execute("SELECT COUNT(*) FROM ssf_experiments").fetchone()[0]
+    cursor.execute('''
+    DELETE FROM ssf_experiments
+    WHERE id NOT IN (
+        SELECT MIN(id)
+        FROM ssf_experiments
+        GROUP BY organism, substrate, enzyme, raw_yield, raw_unit, reference
+    );
+    ''')
+    conn.commit()
+    final_count = cursor.execute("SELECT COUNT(*) FROM ssf_experiments").fetchone()[0]
+    return initial_count - final_count
 
 def normalize_yield(raw_yield, raw_unit, moisture_pct):
     unit = str(raw_unit).lower().strip()
@@ -109,6 +146,17 @@ menu = st.sidebar.selectbox("Navigation Menu", [
 # Option 1: View Database
 if menu == "View Database":
     st.header("All Stored Experiment Records")
+    
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🧹 Remove Duplicates"):
+            deleted_num = remove_duplicates_from_db()
+            if deleted_num > 0:
+                st.success(f"Removed {deleted_num} duplicate record(s)!")
+            else:
+                st.info("No duplicate records found.")
+            st.rerun()
+
     df = pd.read_sql_query("SELECT organism, substrate, enzyme, norm_yield, confidence, ph, temp_c, time_hrs, supplements, reference FROM ssf_experiments ORDER BY norm_yield DESC", conn)
     display_table_with_links(df)
 
@@ -139,6 +187,7 @@ elif menu == "Add Single Record":
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (organism.strip(), substrate.strip().title(), enzyme.strip().lower(), raw_yield, raw_unit, moisture_pct, ph, temp_c, time_hrs, supplements.strip(), norm, conf, reference.strip()))
                 conn.commit()
+                remove_duplicates_from_db()
                 st.success(f"Record Saved! Normalized Yield: {norm} U/g dry (Confidence: {conf})")
                 st.rerun()
 
@@ -178,7 +227,8 @@ elif menu == "Upload CSV Dataset":
                     count += 1
 
                 conn.commit()
-                st.success(f"Successfully imported {count} records into the database!")
+                removed_dups = remove_duplicates_from_db()
+                st.success(f"Imported {count} records successfully! ({removed_dups} duplicate records purged)")
                 st.rerun()
         except Exception as e:
             st.error(f"Error reading CSV file: {e}")
