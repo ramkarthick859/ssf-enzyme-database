@@ -160,8 +160,17 @@ menu = st.sidebar.selectbox("Navigation Menu", [
 if menu == "View Database":
     st.header("All Stored Experiment Records")
     
-    col1, col2 = st.columns([3, 1])
-    with col2:
+    df = pd.read_sql_query("SELECT organism, substrate, enzyme, norm_yield, confidence, ph, temp_c, time_hrs, supplements, reference FROM ssf_experiments ORDER BY norm_yield DESC", conn)
+
+    # Database Summary Metric Cards
+    m_col1, m_col2, m_col3, m_col4 = st.columns([2, 2, 2, 2])
+    with m_col1:
+        st.metric("Total Records Stored", len(df))
+    with m_col2:
+        st.metric("Unique Substrates", df["substrate"].nunique() if not df.empty else 0)
+    with m_col3:
+        st.metric("Unique Enzymes", df["enzyme"].nunique() if not df.empty else 0)
+    with m_col4:
         if st.button("🧹 Remove Duplicates"):
             deleted_num = remove_duplicates_from_db()
             if deleted_num > 0:
@@ -170,7 +179,7 @@ if menu == "View Database":
                 st.info("No duplicate records found.")
             st.rerun()
 
-    df = pd.read_sql_query("SELECT organism, substrate, enzyme, norm_yield, confidence, ph, temp_c, time_hrs, supplements, reference FROM ssf_experiments ORDER BY norm_yield DESC", conn)
+    st.markdown("---")
     display_table_with_links(df)
 
 # Option 2: Add Single Record
