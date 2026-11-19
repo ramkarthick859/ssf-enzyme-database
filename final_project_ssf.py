@@ -4,60 +4,42 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
 
-# 1. Page Configuration
 st.set_page_config(
-    page_title="BioCatalyst Bench | SSF & SmF Yield Explorer",
-    page_icon="🧬",
+    page_title="SSF & SmF Enzyme Yield Studio",
+    page_icon="🧪",
     layout="wide",
-    initial_sidebar_state="expanded",
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "ssf_database.db")
 
-# Custom UI Styling: Always-open sidebar + distinct bioprocess cards
 st.markdown(
     """
     <style>
-        /* Keep left sidebar open and visible */
-        [data-testid="stSidebar"] {
-            min-width: 265px !important;
-            max-width: 265px !important;
-            transform: none !important;
-            visibility: visible !important;
+        .studio-header {
+            background: linear-gradient(90deg, #1b365d 0%, #2b6cb0 100%);
+            padding: 1.1rem 1.4rem;
+            border-radius: 12px;
+            color: white;
+            margin-bottom: 0.75rem;
         }
-        [data-testid="collapsedControl"] {
-            display: none !important;
-        }
-
-        /* Custom header banner */
-        .app-banner {
-            background: linear-gradient(120deg, #0f2942 0%, #165b63 100%);
-            padding: 1.25rem 1.5rem;
-            border-radius: 14px;
-            color: #ffffff;
-            margin-bottom: 1rem;
-            box-shadow: 0 4px 14px rgba(15, 41, 66, 0.14);
-        }
-        .app-banner h1 {
+        .studio-header h2 {
             margin: 0;
-            font-size: 1.65rem;
-            color: #ffffff;
+            color: white;
+            font-size: 1.5rem;
         }
-        .app-banner p {
-            margin: 0.35rem 0 0 0;
-            color: #d9f2f2;
-            font-size: 0.95rem;
+        .studio-header p {
+            margin: 0.25rem 0 0 0;
+            color: #e2e8f0;
+            font-size: 0.9rem;
         }
-
-        /* Highlight card for optimal conditions */
-        .best-card {
-            background: #f2fbf9;
-            border-left: 5px solid #0e8a7d;
-            border-radius: 10px;
-            padding: 1rem 1.2rem;
-            margin: 0.75rem 0 1rem 0;
-            color: #102a43;
+        .insight-box {
+            background-color: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-left: 4px solid #2b6cb0;
+            border-radius: 8px;
+            padding: 0.9rem 1.1rem;
+            margin: 0.6rem 0;
         }
     </style>
     """,
@@ -65,7 +47,6 @@ st.markdown(
 )
 
 
-# 2. Thread-Safe SQLite Connection Helper
 def get_connection():
     conn = sqlite3.connect(DB_PATH, timeout=30.0, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -74,7 +55,6 @@ def get_connection():
     return conn
 
 
-# 3. Verified Seed Data (Non-overlapping organism + substrate + enzyme where possible)
 VERIFIED_SEED_DATA = [
     ("Aspergillus niger", "Banana Peel", "pectinase", 27.68, "U/mL", 60.0, 5.8, 32.4, 66.0, "Ammonium sulfate", 276.8, "LOW", "10.1007/s13197-014-1413-8", "SSF"),
     ("Fungal consortium", "Coffee Husk", "cellulase", 10.0, "U/g dry", 65.0, 5.0, 37.0, 96.0, "Compost", 10.0, "HIGH", "10.1016/j.scitotenv.2017.02.184", "SSF"),
@@ -154,46 +134,22 @@ init_db()
 def to_float(x, default=0.0):
     if x is None:
         return default
-    x_str = str(x).strip()
     try:
-        return float(x_str) if x_str else default
+        s = str(x).strip()
+        return float(s) if s else default
     except ValueError:
         return default
 
 
-def remove_duplicates_from_db():
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        initial_count = cursor.execute("SELECT COUNT(*) FROM ssf_experiments").fetchone()[0]
-        cursor.execute(
-            """
-            DELETE FROM ssf_experiments
-            WHERE id NOT IN (
-                SELECT MIN(id)
-                FROM ssf_experiments
-                GROUP BY LOWER(TRIM(organism)), LOWER(TRIM(substrate)), LOWER(TRIM(enzyme)),
-                         fermentation_mode, reference
-            );
-            """
-        )
-        conn.commit()
-        final_count = cursor.execute("SELECT COUNT(*) FROM ssf_experiments").fetchone()[0]
-        return initial_count - final_count
-    finally:
-        conn.close()
-
-
 def normalize_yield(raw_yield, raw_unit, moisture_pct):
     unit = str(raw_unit).lower().strip()
-    raw_yield = to_float(raw_yield, default=0.0)
-    moisture_pct = to_float(moisture_pct, default=50.0)
-
+    raw_yield = to_float(raw_yield, 0.0)
+    moisture_pct = to_float(moisture_pct, 50.0)
     if "dry" in unit or "u/gds" in unit:
         return round(raw_yield, 2), "HIGH"
     elif "wet" in unit or unit == "u/g":
-        dry_factor = 1.0 - (moisture_pct / 100.0)
-        return (round(raw_yield / dry_factor, 2), "MEDIUM") if dry_factor > 0 else (round(raw_yield, 2), "LOW")
+        factor = 1.0 - (moisture_pct / 100.0)
+        return (round(raw_yield / factor, 2), "MEDIUM") if factor > 0 else (round(raw_yield, 2), "LOW")
     elif "ml" in unit:
         return round(raw_yield * 10.0, 2), "LOW"
     return round(raw_yield, 2), "LOW"
@@ -210,69 +166,7 @@ def make_clickable_link(ref):
     return f"https://doi.org/{ref}"
 
 
-def display_table_with_links(df, show_rank=False):
-    if df.empty:
-        st.info("No matching records found.")
-        return
-
-    display_df = df.copy()
-    if show_rank:
-        display_df.insert(0, "rank", ["🏆 #1" if i == 0 else f"#{i+1}" for i in range(len(display_df))])
-
-    if "raw_yield" in display_df.columns and "raw_unit" in display_df.columns:
-        display_df["reported_yield"] = display_df.apply(
-            lambda r: f"{r['raw_yield']} {r['raw_unit']}", axis=1
-        )
-
-    display_df["paper_url"] = display_df["reference"].apply(make_clickable_link)
-
-    preferred_cols = [
-        col
-        for col in [
-            "rank",
-            "fermentation_mode",
-            "organism",
-            "substrate",
-            "enzyme",
-            "norm_yield",
-            "reported_yield",
-            "confidence",
-            "ph",
-            "temp_c",
-            "moisture_pct",
-            "time_hrs",
-            "supplements",
-            "paper_url",
-            "reference",
-        ]
-        if col in display_df.columns
-    ]
-
-    st.dataframe(
-        display_df[preferred_cols],
-        column_config={
-            "rank": "Rank",
-            "fermentation_mode": "Mode",
-            "paper_url": st.column_config.LinkColumn("Paper Link", display_text="🔗 Open DOI"),
-            "organism": "Organism",
-            "substrate": "Substrate",
-            "enzyme": "Enzyme",
-            "norm_yield": st.column_config.NumberColumn("Normalized Yield (U/g dry)", format="%.2f U/g"),
-            "reported_yield": "Reported Yield",
-            "confidence": "Confidence",
-            "ph": "pH",
-            "temp_c": "Temp (°C)",
-            "moisture_pct": "Moisture (%)",
-            "time_hrs": "Hours",
-            "supplements": "Supplements",
-            "reference": "DOI / Reference",
-        },
-        hide_index=True,
-        use_container_width=True,
-    )
-
-
-def load_all_data():
+def load_data():
     conn = get_connection()
     try:
         return pd.read_sql_query(
@@ -289,378 +183,299 @@ def load_all_data():
         conn.close()
 
 
-def top_n_with_other(df, col, metric="norm_yield", agg="max", n=10):
-    grouped = getattr(df.groupby(col)[metric], agg)().sort_values(ascending=False)
-    if len(grouped) <= n:
-        return grouped
-    top_part = grouped.iloc[:n]
-    other_val = grouped.iloc[n:].max() if agg == "max" else grouped.iloc[n:].mean()
-    return pd.concat([top_part, pd.Series({f"Other ({len(grouped)-n})": other_val})])
+def render_table(df, show_rank=True):
+    if df.empty:
+        st.info("No matching records found.")
+        return
+    out = df.copy()
+    if show_rank:
+        out.insert(0, "rank", [f"#{i+1}" for i in range(len(out))])
+    out["reported"] = out.apply(lambda r: f"{r['raw_yield']} {r['raw_unit']}", axis=1)
+    out["doi_link"] = out["reference"].apply(make_clickable_link)
+    cols = [
+        c for c in [
+            "rank", "fermentation_mode", "organism", "substrate", "enzyme",
+            "norm_yield", "reported", "confidence", "ph", "temp_c",
+            "moisture_pct", "time_hrs", "supplements", "doi_link"
+        ] if c in out.columns
+    ]
+    st.dataframe(
+        out[cols],
+        column_config={
+            "doi_link": st.column_config.LinkColumn("DOI", display_text="Open"),
+            "norm_yield": st.column_config.NumberColumn("Norm Yield (U/g dry)", format="%.2f"),
+        },
+        hide_index=True,
+        use_container_width=True,
+    )
 
 
-# --- BANNER & ALWAYS-OPEN SIDEBAR RADIO NAVIGATION ---
+# --- HEADER & TOP NAVIGATION ---
 st.markdown(
     """
-    <div class="app-banner">
-        <h1>🧬 BioCatalyst Bench — SSF & SmF Enzyme Yield Database</h1>
-        <p>Non-cereal agro-industrial residues • Normalized enzyme activity • Matplotlib visual analytics</p>
+    <div class="studio-header">
+        <h2>🧪 SSF & SmF Enzyme Yield Studio</h2>
+        <p>Literature screening, batch calculator, head-to-head comparison, and Matplotlib analytics</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
+nav_options = [
+    "Explorer & Recommender",
+    "Batch & Yield Calculator",
+    "Head-to-Head Comparator",
+    "Add / Import Data",
+    "Matplotlib Charts",
+]
+page = st.segmented_control("Workspace", nav_options, default="Explorer & Recommender", label_visibility="collapsed")
+if page is None:
+    page = "Explorer & Recommender"
+
+df = load_data()
+
+# Sidebar for Feature 4: Constraint-Based Filtering
 with st.sidebar:
-    st.markdown("### 🧭 Navigation")
-    menu = st.radio(
-        "Select Module",
-        [
-            "View Database",
-            "Search & Filter",
-            "Add Single Record",
-            "Upload CSV Dataset",
-            "Yield Data Visualizations",
-            "Best Conditions Summary",
-        ],
-        label_visibility="collapsed",
-    )
+    st.markdown("### Constraint-Based Filters")
+    max_temp = st.slider("Max Incubation Temp (°C)", 20.0, 95.0, 95.0, step=1.0)
+    mode_choice = st.selectbox("Fermentation Mode", ["All", "SSF", "SmF"])
+    conf_only = st.checkbox("HIGH confidence (dry-basis) only", value=False)
     st.markdown("---")
-    df_side = load_all_data()
-    st.caption(f"Total records: **{len(df_side)}**")
+    st.caption(f"Database records: **{len(df)}**")
 
-df = load_all_data()
+filtered_base = df[df["temp_c"] <= max_temp].copy()
+if mode_choice != "All":
+    filtered_base = filtered_base[filtered_base["fermentation_mode"] == mode_choice]
+if conf_only:
+    filtered_base = filtered_base[filtered_base["confidence"] == "HIGH"]
 
-# --- 1. VIEW DATABASE (Clean Database View, Metrics, Dedup & Export) ---
-if menu == "View Database":
-    st.subheader("📋 Complete Shared Database")
+# --- 1. EXPLORER, RECOMMENDER & OPERATING WINDOW (Features 3 & 4) ---
+if page == "Explorer & Recommender":
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Matching Records", len(filtered_base))
+    c2.metric("Peak Yield (U/g dry)", f"{filtered_base['norm_yield'].max():.2f}" if not filtered_base.empty else "0.00")
+    c3.metric("Median Yield (U/g dry)", f"{filtered_base['norm_yield'].median():.2f}" if not filtered_base.empty else "0.00")
+    c4.metric("Enzymes Covered", filtered_base["enzyme"].nunique() if not filtered_base.empty else 0)
 
-    c1, c2, c3, c4, c5 = st.columns([1.4, 1.4, 1.4, 1.8, 2.0])
-    c1.metric("Total Records", len(df))
-    c2.metric("Organisms", df["organism"].nunique() if not df.empty else 0)
-    c3.metric("Substrates", df["substrate"].nunique() if not df.empty else 0)
-    with c4:
-        if st.button("🧹 Clean Duplicates", use_container_width=True):
-            removed = remove_duplicates_from_db()
-            st.toast(f"Removed {removed} duplicate record(s)." if removed else "No duplicates found.")
-            st.rerun()
-    with c5:
-        if not df.empty:
-            csv_bytes = df.drop(columns=["id"]).to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "📥 Export Dataset (CSV)",
-                data=csv_bytes,
-                file_name="ssf_smf_enzyme_database.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
+    f1, f2, f3, f4 = st.columns(4)
+    org_sel = f1.selectbox("Organism", ["All"] + sorted(filtered_base["organism"].dropna().unique().tolist()))
+    sub_sel = f2.selectbox("Substrate", ["All"] + sorted(filtered_base["substrate"].dropna().unique().tolist()))
+    enz_sel = f3.selectbox("Enzyme", ["All"] + sorted(filtered_base["enzyme"].dropna().unique().tolist()))
+    kw_sel = f4.text_input("Keyword (Supplement / DOI)", placeholder="e.g., Peptone or 10.1016")
 
-    display_table_with_links(df, show_rank=False)
+    view = filtered_base.copy()
+    if org_sel != "All":
+        view = view[view["organism"] == org_sel]
+    if sub_sel != "All":
+        view = view[view["substrate"] == sub_sel]
+    if enz_sel != "All":
+        view = view[view["enzyme"] == enz_sel]
+    if kw_sel.strip():
+        q = kw_sel.strip()
+        view = view[
+            view["supplements"].str.contains(q, case=False, na=False)
+            | view["reference"].str.contains(q, case=False, na=False)
+            | view["organism"].str.contains(q, case=False, na=False)
+            | view["substrate"].str.contains(q, case=False, na=False)
+        ]
 
-# --- 2. SEARCH & FILTER (Tailored Selectors + Keyword Search + Best Condition Recommender) ---
-elif menu == "Search & Filter":
-    st.subheader("🔎 Search, Filter & Best Condition Recommender")
+    view = view.sort_values("norm_yield", ascending=False).reset_index(drop=True)
 
-    p1, p2, p3, p4 = st.columns(4)
-    if "preset_enzyme" not in st.session_state:
-        st.session_state["preset_enzyme"] = "All"
-    if "preset_mode" not in st.session_state:
-        st.session_state["preset_mode"] = "All"
+    if not view.empty:
+        top = view.iloc[0]
+        p_min, p_med, p_max = view["ph"].min(), view["ph"].median(), view["ph"].max()
+        t_min, t_med, t_max = view["temp_c"].min(), view["temp_c"].median(), view["temp_c"].max()
+        m_min, m_med, m_max = view["moisture_pct"].min(), view["moisture_pct"].median(), view["moisture_pct"].max()
+        h_min, h_med, h_max = view["time_hrs"].min(), view["time_hrs"].median(), view["time_hrs"].max()
 
-    if p1.button("Reset Filters", use_container_width=True):
-        st.session_state["preset_enzyme"] = "All"
-        st.session_state["preset_mode"] = "All"
-        st.rerun()
-    if p2.button("Top Pectinases", use_container_width=True):
-        st.session_state["preset_enzyme"] = "pectinase"
-        st.rerun()
-    if p3.button("Top Xylanases", use_container_width=True):
-        st.session_state["preset_enzyme"] = "xylanase"
-        st.rerun()
-    if p4.button("SSF Only", use_container_width=True):
-        st.session_state["preset_mode"] = "SSF"
-        st.rerun()
+        st.markdown(
+            f"""
+            <div class="insight-box">
+                <strong>Best Match:</strong> <strong>{top['organism']}</strong> on <strong>{top['substrate']}</strong>
+                → <strong>{top['enzyme']}</strong> ({top['fermentation_mode']}) at <strong>pH {top['ph']}</strong>,
+                <strong>{top['temp_c']}°C</strong>, <strong>{top['moisture_pct']}% moisture</strong>, <strong>{top['time_hrs']}h</strong>
+                (Supplement: <em>{top['supplements']}</em>) = <strong>{top['norm_yield']:.2f} U/g dry</strong>.<br>
+                <small>
+                    <strong>Operating Window ({len(view)} record(s)):</strong>
+                    pH {p_min}–{p_max} (med {p_med:.1f}) •
+                    Temp {t_min}–{t_max}°C (med {t_med:.1f}°C) •
+                    Moisture {m_min}–{m_max}% (med {m_med:.1f}%) •
+                    Time {h_min}–{h_max}h (med {h_med:.1f}h)
+                </small>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    if not df.empty:
-        f1, f2, f3, f4 = st.columns([2.4, 2.4, 2.2, 1.4])
-        org_options = ["All"] + sorted(df["organism"].dropna().unique().tolist())
-        sub_options = ["All"] + sorted(df["substrate"].dropna().unique().tolist())
-        enz_options = ["All"] + sorted(df["enzyme"].dropna().unique().tolist())
-        mode_options = ["All"] + sorted(df["fermentation_mode"].dropna().unique().tolist())
+    render_table(view, show_rank=True)
 
-        default_enz_idx = enz_options.index(st.session_state["preset_enzyme"]) if st.session_state["preset_enzyme"] in enz_options else 0
-        default_mode_idx = mode_options.index(st.session_state["preset_mode"]) if st.session_state["preset_mode"] in mode_options else 0
+    if not filtered_base.empty:
+        csv_data = filtered_base.drop(columns=["id"]).to_csv(index=False).encode("utf-8")
+        st.download_button("Download Filtered CSV", data=csv_data, file_name="filtered_enzyme_yields.csv", mime="text/csv")
 
-        selected_org = f1.selectbox("Organism", org_options)
-        selected_sub = f2.selectbox("Substrate", sub_options)
-        selected_enz = f3.selectbox("Enzyme", enz_options, index=default_enz_idx)
-        selected_mode = f4.selectbox("Mode", mode_options, index=default_mode_idx)
+# --- 2. BATCH & YIELD CALCULATOR (Feature 1) ---
+elif page == "Batch & Yield Calculator":
+    st.subheader("⚖️ Solid-State Batch Water & Total Activity Calculator")
+    st.caption("Estimate water/buffer addition for a target moisture level and total enzyme units for a chosen literature entry.")
 
-        k1, k2, k3 = st.columns(3)
-        org_kw = k1.text_input("Organism Keyword", placeholder="e.g., Aspergillus, Bacillus")
-        sub_kw = k2.text_input("Substrate Keyword", placeholder="e.g., Peel, Bagasse, Cake")
-        supp_kw = k3.text_input("Supplement / DOI Keyword", placeholder="e.g., Peptone, 10.1016")
+    if not filtered_base.empty:
+        labels = [
+            f"{r['organism']} | {r['substrate']} | {r['enzyme']} ({r['norm_yield']:.1f} U/g dry)"
+            for _, r in filtered_base.iterrows()
+        ]
+        idx = st.selectbox("Select Reference Record", range(len(labels)), format_func=lambda i: labels[i])
+        rec = filtered_base.iloc[idx]
 
-        filtered = df.copy()
-        if selected_org != "All":
-            filtered = filtered[filtered["organism"] == selected_org]
-        if selected_sub != "All":
-            filtered = filtered[filtered["substrate"] == selected_sub]
-        if selected_enz != "All":
-            filtered = filtered[filtered["enzyme"] == selected_enz]
-        if selected_mode != "All":
-            filtered = filtered[filtered["fermentation_mode"] == selected_mode]
-        if org_kw.strip():
-            filtered = filtered[filtered["organism"].str.contains(org_kw.strip(), case=False, na=False)]
-        if sub_kw.strip():
-            filtered = filtered[filtered["substrate"].str.contains(sub_kw.strip(), case=False, na=False)]
-        if supp_kw.strip():
-            mask = (
-                filtered["supplements"].str.contains(supp_kw.strip(), case=False, na=False)
-                | filtered["reference"].str.contains(supp_kw.strip(), case=False, na=False)
-            )
-            filtered = filtered[mask]
+        col_l, col_r = st.columns(2)
+        with col_l:
+            dry_mass_g = st.number_input("Dry Substrate Mass (g)", min_value=1.0, value=100.0, step=10.0)
+            target_moist = st.slider("Target Moisture (%)", min_value=20.0, max_value=85.0, value=float(rec["moisture_pct"]), step=1.0)
+        with col_r:
+            m_frac = target_moist / 100.0
+            water_ml = dry_mass_g * (m_frac / (1.0 - m_frac))
+            total_wet_g = dry_mass_g + water_ml
+            est_total_units = dry_mass_g * rec["norm_yield"]
 
-        filtered = filtered.sort_values(by="norm_yield", ascending=False).reset_index(drop=True)
+            st.metric("Estimated Water / Buffer to Add", f"{water_ml:.1f} mL")
+            st.metric("Total Wet Batch Mass", f"{total_wet_g:.1f} g")
+            st.metric("Estimated Total Enzyme Activity", f"{est_total_units:,.1f} U")
 
-        tab_res, tab_alt = st.tabs(["🏆 Best Conditions & Matching Records", "💡 Closest Alternatives"])
+# --- 3. HEAD-TO-HEAD COMPARATOR (Feature 2) ---
+elif page == "Head-to-Head Comparator":
+    st.subheader("⚔️ Side-by-Side Organism / Substrate Comparator")
+    if len(filtered_base) >= 2:
+        opts = [
+            f"#{i+1}: {r['organism']} on {r['substrate']} [{r['enzyme']}]"
+            for i, (_, r) in enumerate(filtered_base.iterrows())
+        ]
+        c_a, c_b = st.columns(2)
+        a_idx = c_a.selectbox("Option A", range(len(opts)), index=0, format_func=lambda i: opts[i])
+        b_idx = c_b.selectbox("Option B", range(len(opts)), index=min(1, len(opts) - 1), format_func=lambda i: opts[i])
 
-        with tab_res:
-            if not filtered.empty:
-                best = filtered.iloc[0]
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Peak Normalized Yield", f"{best['norm_yield']:.2f} U/g", f"Mean: {filtered['norm_yield'].mean():.2f} U/g")
-                m2.metric("Top Organism", best["organism"])
-                m3.metric("Top Substrate", best["substrate"])
-                m4.metric("pH / Temp / Time", f"pH {best['ph']} • {best['temp_c']}°C • {best['time_hrs']}h")
+        row_a = filtered_base.iloc[a_idx]
+        row_b = filtered_base.iloc[b_idx]
 
-                st.markdown(
-                    f"""
-                    <div class="best-card">
-                        <strong>Recommended Protocol ({best['fermentation_mode']}):</strong>
-                        Use <strong>{best['organism']}</strong> on <strong>{best['substrate']}</strong> to produce
-                        <strong>{best['enzyme']}</strong> at <strong>pH {best['ph']}</strong>, <strong>{best['temp_c']}°C</strong>,
-                        <strong>{best['moisture_pct']}% moisture</strong> for <strong>{best['time_hrs']} hrs</strong>
-                        (Supplements: <em>{best['supplements']}</em>) → <strong>{best['norm_yield']:.2f} U/g dry</strong>
-                        (Reported: {best['raw_yield']} {best['raw_unit']}).
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                display_table_with_links(filtered, show_rank=True)
-            else:
-                st.warning("No records match your exact filters.")
+        comp_df = pd.DataFrame({
+            "Metric": ["Organism", "Substrate", "Enzyme", "Mode", "Norm Yield (U/g dry)", "pH", "Temp (°C)", "Moisture (%)", "Time (hrs)", "Supplements"],
+            "Option A": [row_a["organism"], row_a["substrate"], row_a["enzyme"], row_a["fermentation_mode"], row_a["norm_yield"], row_a["ph"], row_a["temp_c"], row_a["moisture_pct"], row_a["time_hrs"], row_a["supplements"]],
+            "Option B": [row_b["organism"], row_b["substrate"], row_b["enzyme"], row_b["fermentation_mode"], row_b["norm_yield"], row_b["ph"], row_b["temp_c"], row_b["moisture_pct"], row_b["time_hrs"], row_b["supplements"]],
+        })
+        st.dataframe(comp_df, hide_index=True, use_container_width=True)
 
-        with tab_alt:
-            alt = pd.DataFrame()
-            if selected_sub != "All" and selected_enz != "All":
-                alt = df[(df["substrate"] == selected_sub) & (df["enzyme"] == selected_enz)]
-            elif selected_org != "All" and selected_enz != "All":
-                alt = df[(df["organism"] == selected_org) & (df["enzyme"] == selected_enz)]
-            elif selected_enz != "All":
-                alt = df[df["enzyme"] == selected_enz]
-            elif selected_sub != "All":
-                alt = df[df["substrate"] == selected_sub]
+# --- 4. ADD / IMPORT DATA ---
+elif page == "Add / Import Data":
+    tab_single, tab_csv = st.tabs(["Add Single Record", "Import CSV File"])
+    with tab_single:
+        with st.form("single_entry"):
+            a, b = st.columns(2)
+            org = a.text_input("Organism")
+            sub = a.text_input("Substrate")
+            enz = a.text_input("Enzyme")
+            mode = a.selectbox("Mode", ["SSF", "SmF"])
+            ry = a.number_input("Raw Yield", min_value=0.0, value=0.0)
+            ru = a.selectbox("Unit", ["U/g dry", "U/g wet", "U/mL"])
 
-            if not alt.empty:
-                display_table_with_links(alt.sort_values("norm_yield", ascending=False).head(15), show_rank=True)
-            else:
-                st.info("Select a substrate or enzyme above to see closest alternative combinations.")
+            mo = b.number_input("Moisture %", min_value=0.0, max_value=100.0, value=60.0)
+            ph = b.number_input("pH", value=5.0)
+            tc = b.number_input("Temp (°C)", value=30.0)
+            hr = b.number_input("Time (hrs)", value=72.0)
+            sp = b.text_input("Supplements", value="None")
+            rf = b.text_input("DOI / Reference", value="Unknown")
 
-# --- 3. ADD SINGLE RECORD ---
-elif menu == "Add Single Record":
-    st.subheader("➕ Add Experiment Record")
-    if "single_add_msg" in st.session_state:
-        st.success(st.session_state.pop("single_add_msg"))
-
-    with st.form("add_form"):
-        col_a, col_b = st.columns(2)
-        with col_a:
-            organism = st.text_input("Organism Name", placeholder="e.g., Aspergillus niger")
-            substrate = st.text_input("Non-Cereal Substrate", placeholder="e.g., Orange Peel")
-            enzyme = st.text_input("Enzyme Type", placeholder="e.g., pectinase")
-            fermentation_mode = st.selectbox("Fermentation Mode", ["SSF", "SmF"])
-            raw_yield = st.number_input("Yield Value", min_value=0.0, value=0.0)
-            raw_unit = st.selectbox("Yield Unit", ["U/g dry", "U/g wet", "U/mL"])
-        with col_b:
-            moisture_pct = st.number_input("Moisture %", min_value=0.0, max_value=100.0, value=60.0)
-            ph = st.number_input("pH", value=5.0)
-            temp_c = st.number_input("Temperature (°C)", value=30.0)
-            time_hrs = st.number_input("Incubation Hours", value=72.0)
-            supplements = st.text_input("Supplements", placeholder="e.g., Peptone")
-            reference = st.text_input("DOI / Citation", placeholder="e.g., 10.1016/j.biortech.2009.08.087")
-
-        if st.form_submit_button("Save Record"):
-            if not organism.strip() or not substrate.strip() or not enzyme.strip() or raw_yield <= 0:
-                st.error("Please enter Organism, Substrate, Enzyme, and a Yield Value > 0.")
-            else:
-                norm, conf = normalize_yield(raw_yield, raw_unit, moisture_pct)
-                conn = get_connection()
-                try:
-                    conn.execute(
-                        """
-                        INSERT INTO ssf_experiments (
-                            organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct,
-                            ph, temp_c, time_hrs, supplements, norm_yield, confidence, reference, fermentation_mode
+            if st.form_submit_button("Save Record"):
+                if org.strip() and sub.strip() and enz.strip() and ry > 0:
+                    ny, cf = normalize_yield(ry, ru, mo)
+                    conn = get_connection()
+                    try:
+                        conn.execute(
+                            """
+                            INSERT INTO ssf_experiments (
+                                organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct,
+                                ph, temp_c, time_hrs, supplements, norm_yield, confidence, reference, fermentation_mode
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (org.strip(), sub.strip().title(), enz.strip().lower(), ry, ru, mo, ph, tc, hr, sp.strip() or "None", ny, cf, rf.strip() or "Unknown", mode),
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            organism.strip(),
-                            substrate.strip().title(),
-                            enzyme.strip().lower(),
-                            raw_yield,
-                            raw_unit,
-                            moisture_pct,
-                            ph,
-                            temp_c,
-                            time_hrs,
-                            supplements.strip() or "None",
-                            norm,
-                            conf,
-                            reference.strip() or "Unknown",
-                            fermentation_mode,
-                        ),
-                    )
+                        conn.commit()
+                    finally:
+                        conn.close()
+                    st.success(f"Saved! Normalized yield = {ny:.2f} U/g dry ({cf}).")
+                    st.rerun()
+                else:
+                    st.error("Fill in Organism, Substrate, Enzyme, and Raw Yield > 0.")
+
+    with tab_csv:
+        up = st.file_uploader("Upload CSV", type=["csv"])
+        if up is not None:
+            up_df = pd.read_csv(up).fillna("")
+            st.dataframe(up_df.head(8), use_container_width=True)
+            if st.button("Import CSV Rows"):
+                conn = get_connection()
+                inserted = 0
+                try:
+                    for _, r in up_df.iterrows():
+                        o = str(r.get("organism", "")).strip()
+                        s = str(r.get("substrate", "")).strip().title()
+                        e = str(r.get("enzyme", "")).strip().lower()
+                        if not o or not s or not e:
+                            continue
+                        ry = to_float(r.get("raw_yield"), 0.0)
+                        ru = str(r.get("raw_unit", "U/g dry")).strip() or "U/g dry"
+                        mo = to_float(r.get("moisture_pct"), 50.0)
+                        ny, cf = normalize_yield(ry, ru, mo)
+                        mode = "SmF" if str(r.get("fermentation_mode", "SSF")).strip().lower() == "smf" else "SSF"
+                        conn.execute(
+                            """
+                            INSERT INTO ssf_experiments (
+                                organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct,
+                                ph, temp_c, time_hrs, supplements, norm_yield, confidence, reference, fermentation_mode
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                o, s, e, ry, ru, mo,
+                                to_float(r.get("ph"), 7.0),
+                                to_float(r.get("temp_c"), 30.0),
+                                to_float(r.get("time_hrs"), 48.0),
+                                str(r.get("supplements") or "None").strip(),
+                                ny, cf,
+                                str(r.get("reference") or "Unknown").strip(),
+                                mode,
+                            ),
+                        )
+                        inserted += 1
                     conn.commit()
                 finally:
                     conn.close()
-                remove_duplicates_from_db()
-                st.session_state["single_add_msg"] = f"Saved! Normalized Yield: {norm:.2f} U/g dry ({conf} confidence)."
+                st.success(f"Imported {inserted} records.")
                 st.rerun()
 
-# --- 4. UPLOAD CSV DATASET ---
-elif menu == "Upload CSV Dataset":
-    st.subheader("📤 Bulk Import via CSV")
-    st.info("Required columns: `organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct` | Optional: `ph, temp_c, time_hrs, supplements, reference, fermentation_mode`")
+# --- 5. MATPLOTLIB CHARTS ---
+elif page == "Matplotlib Charts":
+    if not filtered_base.empty:
+        top_k = st.slider("Top Categories to Display", 5, 15, 8)
+        log_y = st.checkbox("Use Log Scale", value=False)
 
-    if "uploader_key" not in st.session_state:
-        st.session_state["uploader_key"] = 0
-    if "upload_success_msg" in st.session_state:
-        st.success(st.session_state.pop("upload_success_msg"))
-
-    uploaded_file = st.file_uploader("Upload CSV", type=["csv"], key=f"csv_up_{st.session_state['uploader_key']}")
-    if uploaded_file is not None:
-        df_up = pd.read_csv(uploaded_file).fillna("")
-        st.dataframe(df_up.head(10), use_container_width=True)
-        if st.button("Import Into Database"):
-            added = 0
-            conn = get_connection()
-            try:
-                for _, row in df_up.iterrows():
-                    org = str(row.get("organism", "")).strip()
-                    sub = str(row.get("substrate", "")).strip().title()
-                    enz = str(row.get("enzyme", "")).strip().lower()
-                    if not org or not sub or not enz:
-                        continue
-                    r_yield = to_float(row.get("raw_yield"), 0.0)
-                    r_unit = str(row.get("raw_unit", "U/g dry")).strip() or "U/g dry"
-                    moist = to_float(row.get("moisture_pct"), 50.0)
-                    ph_val = to_float(row.get("ph"), 7.0)
-                    temp_val = to_float(row.get("temp_c"), 30.0)
-                    time_val = to_float(row.get("time_hrs"), 48.0)
-                    supp = str(row.get("supplements") or "None").strip()
-                    ref = str(row.get("reference") or "Unknown").strip()
-                    mode = "SmF" if str(row.get("fermentation_mode") or "SSF").strip().lower() == "smf" else "SSF"
-                    norm, conf = normalize_yield(r_yield, r_unit, moist)
-                    conn.execute(
-                        """
-                        INSERT INTO ssf_experiments (
-                            organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct,
-                            ph, temp_c, time_hrs, supplements, norm_yield, confidence, reference, fermentation_mode
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (org, sub, enz, r_yield, r_unit, moist, ph_val, temp_val, time_val, supp, norm, conf, ref, mode),
-                    )
-                    added += 1
-                conn.commit()
-            finally:
-                conn.close()
-            dups = remove_duplicates_from_db()
-            st.session_state["uploader_key"] += 1
-            st.session_state["upload_success_msg"] = f"Imported {added} rows ({dups} duplicates cleaned)."
-            st.rerun()
-
-# --- 5. YIELD DATA VISUALIZATIONS (Matplotlib Only, Top-N + Other, Dynamic Sizing) ---
-elif menu == "Yield Data Visualizations":
-    st.subheader("📈 Matplotlib Enzyme Yield Visualizations")
-    if df.empty:
-        st.warning("No data available.")
-    else:
-        ctrl1, ctrl2, ctrl3 = st.columns(3)
-        top_n = ctrl1.selectbox("Show Top Categories", [8, 12, 15, 20], index=1)
-        enz_filter = ctrl2.selectbox("Filter Enzyme (Optional)", ["All"] + sorted(df["enzyme"].dropna().unique().tolist()))
-        use_log = ctrl3.checkbox("Log Scale for Yield", value=False)
-
-        vdf = df.copy()
-        if enz_filter != "All":
-            vdf = vdf[vdf["enzyme"] == enz_filter]
-
-        t1, t2 = st.tabs(["Top Substrates & Organisms", "Enzyme Yield Distribution"])
-
-        with t1:
-            c_left, c_right = st.columns(2)
-            with c_left:
-                s_series = top_n_with_other(vdf, "substrate", n=top_n).sort_values(ascending=True)
-                fig, ax = plt.subplots(figsize=(7, max(4.2, len(s_series) * 0.36)))
-                ax.barh(s_series.index, s_series.values, color="#165b63")
-                if use_log:
-                    ax.set_xscale("log")
-                ax.set_xlabel("Max Normalized Yield (U/g dry)")
-                ax.set_title(f"Top {top_n} Substrates (+ Other)")
-                ax.grid(axis="x", linestyle="--", alpha=0.4)
-                plt.tight_layout()
-                st.pyplot(fig)
-
-            with c_right:
-                o_series = top_n_with_other(vdf, "organism", n=top_n).sort_values(ascending=True)
-                fig, ax = plt.subplots(figsize=(7, max(4.2, len(o_series) * 0.36)))
-                ax.barh(o_series.index, o_series.values, color="#0e8a7d")
-                if use_log:
-                    ax.set_xscale("log")
-                ax.set_xlabel("Max Normalized Yield (U/g dry)")
-                ax.set_title(f"Top {top_n} Organisms (+ Other)")
-                ax.grid(axis="x", linestyle="--", alpha=0.4)
-                plt.tight_layout()
-                st.pyplot(fig)
-
-        with t2:
-            top_enz = vdf.groupby("enzyme")["norm_yield"].median().sort_values(ascending=False).head(top_n).index.tolist()
-            bdf = vdf[vdf["enzyme"].isin(top_enz)]
-            fig, ax = plt.subplots(figsize=(10, 4.8))
-            data_groups = [bdf[bdf["enzyme"] == e]["norm_yield"].values for e in top_enz]
-            ax.boxplot(data_groups, tick_labels=top_enz, vert=True, patch_artist=True)
-            if use_log:
-                ax.set_yscale("log")
-            ax.set_ylabel("Normalized Yield (U/g dry)")
-            ax.set_title("Normalized Yield Distribution by Enzyme Class")
-            plt.xticks(rotation=25, ha="right")
-            ax.grid(axis="y", linestyle="--", alpha=0.4)
+        left, right = st.columns(2)
+        with left:
+            top_enz = filtered_base.groupby("enzyme")["norm_yield"].max().sort_values(ascending=True).tail(top_k)
+            fig, ax = plt.subplots(figsize=(6.5, 4.2))
+            ax.barh(top_enz.index, top_enz.values, color="#2b6cb0")
+            if log_y:
+                ax.set_xscale("log")
+            ax.set_xlabel("Max Yield (U/g dry)")
+            ax.set_title(f"Top {top_k} Enzymes by Peak Yield")
+            ax.grid(axis="x", linestyle="--", alpha=0.4)
             plt.tight_layout()
             st.pyplot(fig)
 
-# --- 6. BEST CONDITIONS SUMMARY ---
-elif menu == "Best Conditions Summary":
-    st.subheader("🎯 Optimal Conditions by Substrate & Enzyme Pair")
-    if df.empty:
-        st.warning("No data available.")
-    else:
-        rows = []
-        for (sub, enz), grp in df.groupby(["substrate", "enzyme"]):
-            top3 = grp.sort_values("norm_yield", ascending=False).head(3)
-            best = top3.iloc[0]
-            rows.append(
-                {
-                    "Substrate": sub,
-                    "Enzyme": enz,
-                    "Best Mode": best["fermentation_mode"],
-                    "Best Yield (U/g)": best["norm_yield"],
-                    "Best Organism": best["organism"],
-                    "Optimal pH": best["ph"],
-                    "Optimal Temp (°C)": best["temp_c"],
-                    "Optimal Hours": best["time_hrs"],
-                    "Top-3 Avg pH": round(top3["ph"].mean(), 1),
-                    "Top-3 Avg Temp (°C)": round(top3["temp_c"].mean(), 1),
-                }
-            )
-        summary_df = pd.DataFrame(rows).sort_values("Best Yield (U/g)", ascending=False)
-        st.dataframe(summary_df, hide_index=True, use_container_width=True)
+        with right:
+            top_sub = filtered_base.groupby("substrate")["norm_yield"].max().sort_values(ascending=True).tail(top_k)
+            fig, ax = plt.subplots(figsize=(6.5, 4.2))
+            ax.barh(top_sub.index, top_sub.values, color="#2c7a7b")
+            if log_y:
+                ax.set_xscale("log")
+            ax.set_xlabel("Max Yield (U/g dry)")
+            ax.set_title(f"Top {top_k} Substrates by Peak Yield")
+            ax.grid(axis="x", linestyle="--", alpha=0.4)
+            plt.tight_layout()
+            st.pyplot(fig)
