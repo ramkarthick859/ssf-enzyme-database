@@ -9,21 +9,43 @@ st.set_page_config(
     page_title="THE BIOCATALYST ARCHIVE | SSF & SmF Specimen Index",
     page_icon="🏛️",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "ssf_database.db")
 
-# 2. Natural History / Specimen Archive Editorial Styling
+# 2. High-Contrast Natural History / Specimen Archive Styling
 st.markdown(
     """
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
         .stApp {
-            background-color: #f6f3ec;
-            color: #1c2226;
+            background-color: #f4f1ea;
+            color: #111827 !important;
             font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        /* High-contrast text across main body and inputs */
+        .stApp p, .stApp label, .stApp span, .stApp div, .stApp li {
+            color: #111827;
+        }
+
+        /* Keep left sidebar open and high-contrast */
+        [data-testid="stSidebar"] {
+            background-color: #162127 !important;
+            border-right: 1px solid #2d4c48;
+            min-width: 270px !important;
+            max-width: 270px !important;
+            transform: none !important;
+            visibility: visible !important;
+        }
+        [data-testid="stSidebar"] * {
+            color: #f4f1ea !important;
+        }
+        [data-testid="collapsedControl"] {
+            display: none !important;
         }
 
         /* Top Archival Masthead */
@@ -31,8 +53,8 @@ st.markdown(
             background: linear-gradient(135deg, #162127 0%, #24343d 60%, #2d4c48 100%);
             border: 1px solid #3c5452;
             border-radius: 16px;
-            padding: 1.6rem 2rem;
-            color: #f6f3ec;
+            padding: 1.5rem 1.9rem;
+            color: #f4f1ea !important;
             margin-bottom: 1rem;
             box-shadow: 0 12px 28px rgba(22, 33, 39, 0.16);
         }
@@ -40,69 +62,80 @@ st.markdown(
             font-size: 0.75rem;
             letter-spacing: 0.16em;
             text-transform: uppercase;
-            color: #9ec5b8;
+            color: #a7d3c4 !important;
             font-weight: 700;
-            margin-bottom: 0.35rem;
+            margin-bottom: 0.3rem;
         }
         .masthead h1 {
             font-family: 'Cormorant Garamond', serif;
-            font-size: 2.35rem;
+            font-size: 2.25rem;
             font-weight: 700;
             line-height: 1.1;
             margin: 0;
-            color: #fffdf9;
+            color: #ffffff !important;
         }
         .masthead p {
-            margin: 0.5rem 0 0 0;
-            color: #d6dfd9;
-            font-size: 0.96rem;
+            margin: 0.45rem 0 0 0;
+            color: #e5ece8 !important;
+            font-size: 0.95rem;
             max-width: 820px;
         }
 
         /* Specimen Plate / Field Note Card */
         .specimen-plate {
-            background: #fffdf9;
-            border: 1px solid #dfd8c8;
-            border-left: 5px solid #2d6a5b;
+            background: #ffffff;
+            border: 1px solid #d6cfc0;
+            border-left: 5px solid #1f5e4e;
             border-radius: 12px;
             padding: 1.15rem 1.4rem;
             margin: 0.85rem 0 1.15rem 0;
-            box-shadow: 0 4px 14px rgba(28, 34, 38, 0.05);
+            box-shadow: 0 4px 14px rgba(17, 24, 39, 0.06);
+        }
+        .specimen-plate, .specimen-plate * {
+            color: #111827 !important;
         }
         .specimen-code {
-            font-size: 0.74rem;
+            font-size: 0.75rem;
             letter-spacing: 0.12em;
             text-transform: uppercase;
-            color: #2d6a5b;
+            color: #14532d !important;
             font-weight: 700;
         }
         .specimen-title {
             font-family: 'Cormorant Garamond', serif;
             font-size: 1.55rem;
             font-weight: 700;
-            color: #162127;
+            color: #0f172a !important;
             margin: 0.15rem 0 0.4rem 0;
         }
         .tag-pill {
             display: inline-block;
-            background: #eef4f1;
-            color: #214e43;
-            border: 1px solid #c6ddd4;
+            background: #e6f4ee;
+            color: #0f3d2e !important;
+            border: 1px solid #a7d3c4;
             border-radius: 999px;
-            padding: 0.18rem 0.65rem;
-            font-size: 0.78rem;
+            padding: 0.2rem 0.7rem;
+            font-size: 0.8rem;
             font-weight: 600;
             margin-right: 0.35rem;
-            margin-top: 0.25rem;
+            margin-top: 0.3rem;
         }
 
-        /* Metric tiles styled like museum index plaques */
+        /* High-contrast metric plaques */
         div[data-testid="stMetric"] {
-            background-color: #fffdf9;
-            border: 1px solid #dfd8c8;
+            background-color: #ffffff !important;
+            border: 1px solid #d6cfc0 !important;
             border-radius: 12px;
             padding: 0.85rem 1rem;
-            box-shadow: 0 2px 8px rgba(28, 34, 38, 0.04);
+            box-shadow: 0 2px 8px rgba(17, 24, 39, 0.05);
+        }
+        div[data-testid="stMetric"] label,
+        div[data-testid="stMetric"] [data-testid="stMetricValue"],
+        div[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+            color: #0f172a !important;
+        }
+        [data-testid="stMetricValue"] {
+            font-weight: 700 !important;
         }
     </style>
     """,
@@ -273,39 +306,41 @@ def render_table(df, show_rank=True):
     )
 
 
-# --- MASTHEAD & TOP NAVIGATION ---
+df = load_data()
+
+# --- LEFT SIDEBAR: ALWAYS-OPEN NAVIGATION + CONSTRAINTS ---
+with st.sidebar:
+    st.markdown("### 🏛️ Archive Navigation")
+    page = st.radio(
+        "Section",
+        [
+            "Specimen Catalogue",
+            "Batch & Yield Calculator",
+            "Head-to-Head Comparator",
+            "Add / Import Data",
+            "Matplotlib Plates",
+        ],
+        label_visibility="collapsed",
+    )
+    st.markdown("---")
+    st.markdown("### Lab Constraints")
+    max_temp = st.slider("Max Temp (°C)", 20.0, 95.0, 95.0, step=1.0)
+    mode_choice = st.selectbox("Mode", ["All", "SSF", "SmF"])
+    conf_only = st.checkbox("HIGH confidence only", value=False)
+    st.markdown("---")
+    st.caption(f"Total specimens: {len(df)}")
+
+# --- MASTHEAD ---
 st.markdown(
     """
     <div class="masthead">
         <div class="masthead-eyebrow">Bioprocess Specimen & Literature Repository</div>
         <h1>The BioCatalyst Archive</h1>
-        <p>Curated solid-state (SSF) and submerged (SmF) enzyme records across non-cereal agro-industrial residues, with batch planning, side-by-side comparisons, and Matplotlib plates.</p>
+        <p>Curated solid-state (SSF) and submerged (SmF) enzyme records across non-cereal agro-industrial residues.</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
-
-nav_options = [
-    "Specimen Catalogue",
-    "Batch & Yield Calculator",
-    "Head-to-Head Comparator",
-    "Add / Import Data",
-    "Matplotlib Plates",
-]
-page = st.segmented_control("Archive Sections", nav_options, default="Specimen Catalogue", label_visibility="collapsed")
-if page is None:
-    page = "Specimen Catalogue"
-
-df = load_data()
-
-# Sidebar for Constraint-Based Filtering
-with st.sidebar:
-    st.markdown("### Field & Lab Constraints")
-    max_temp = st.slider("Max Incubation Temp (°C)", 20.0, 95.0, 95.0, step=1.0)
-    mode_choice = st.selectbox("Fermentation Regime", ["All", "SSF", "SmF"])
-    conf_only = st.checkbox("HIGH confidence (dry-basis) only", value=False)
-    st.markdown("---")
-    st.caption(f"Catalogued specimens: **{len(df)}**")
 
 filtered_base = df[df["temp_c"] <= max_temp].copy()
 if mode_choice != "All":
