@@ -4,7 +4,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
 
-# 1. Page Configuration
 st.set_page_config(
     page_title="THE BIOCATALYST ARCHIVE | SSF & SmF Specimen Index",
     page_icon="🏛️",
@@ -15,7 +14,6 @@ st.set_page_config(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "ssf_database.db")
 
-# 2. Full Dark Natural History / Specimen Archive Styling
 st.markdown(
     """
     <style>
@@ -33,12 +31,12 @@ st.markdown(
             color: #f1f5f9;
         }
 
-        /* Left Sidebar Navigation & Constraints */
+        /* Left Sidebar Navigation */
         [data-testid="stSidebar"] {
             background-color: #111a20 !important;
             border-right: 1px solid #243642 !important;
-            min-width: 270px !important;
-            max-width: 270px !important;
+            min-width: 265px !important;
+            max-width: 265px !important;
             transform: none !important;
             visibility: visible !important;
         }
@@ -309,7 +307,7 @@ def render_table(df, show_rank=True):
 
 df = load_data()
 
-# --- LEFT SIDEBAR: NAVIGATION + CONSTRAINTS ---
+# --- LEFT SIDEBAR: NAVIGATION ONLY ---
 with st.sidebar:
     st.markdown("### 🏛️ Archive Navigation")
     page = st.radio(
@@ -324,12 +322,7 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.markdown("---")
-    st.markdown("### Lab Constraints")
-    max_temp = st.slider("Max Temp (°C)", 20.0, 95.0, 95.0, step=1.0)
-    mode_choice = st.selectbox("Mode", ["All", "SSF", "SmF"])
-    conf_only = st.checkbox("HIGH confidence only", value=False)
-    st.markdown("---")
-    st.caption(f"Total specimens: {len(df)}")
+    st.caption(f"Catalogued specimens: {len(df)}")
 
 # --- MASTHEAD ---
 st.markdown(
@@ -343,14 +336,20 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-filtered_base = df[df["temp_c"] <= max_temp].copy()
-if mode_choice != "All":
-    filtered_base = filtered_base[filtered_base["fermentation_mode"] == mode_choice]
-if conf_only:
-    filtered_base = filtered_base[filtered_base["confidence"] == "HIGH"]
-
-# --- 1. SPECIMEN CATALOGUE, RECOMMENDER & OPERATING WINDOW ---
+# --- 1. SPECIMEN CATALOGUE, CONSTRAINT RECOMMENDER & OPERATING WINDOW ---
 if page == "Specimen Catalogue":
+    with st.expander("🎯 Lab & Constraint Filters", expanded=True):
+        f_c1, f_c2, f_c3 = st.columns(3)
+        max_temp = f_c1.slider("Max Incubation Temp (°C)", 20.0, 95.0, 95.0, step=1.0)
+        mode_choice = f_c2.selectbox("Fermentation Regime", ["All", "SSF", "SmF"])
+        conf_only = f_c3.checkbox("HIGH confidence (dry-basis) only", value=False)
+
+    filtered_base = df[df["temp_c"] <= max_temp].copy()
+    if mode_choice != "All":
+        filtered_base = filtered_base[filtered_base["fermentation_mode"] == mode_choice]
+    if conf_only:
+        filtered_base = filtered_base[filtered_base["confidence"] == "HIGH"]
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Active Specimens", len(filtered_base))
     c2.metric("Peak Activity (U/g dry)", f"{filtered_base['norm_yield'].max():.2f}" if not filtered_base.empty else "0.00")
@@ -421,13 +420,13 @@ elif page == "Batch & Yield Calculator":
     st.subheader("⚖️ Solid-State Batch Water & Total Activity Calculator")
     st.caption("Estimate water/buffer addition for a target moisture level and total enzyme units for a chosen literature entry.")
 
-    if not filtered_base.empty:
+    if not df.empty:
         labels = [
             f"{r['organism']} | {r['substrate']} | {r['enzyme']} ({r['norm_yield']:.1f} U/g dry)"
-            for _, r in filtered_base.iterrows()
+            for _, r in df.iterrows()
         ]
         idx = st.selectbox("Select Reference Specimen", range(len(labels)), format_func=lambda i: labels[i])
-        rec = filtered_base.iloc[idx]
+        rec = df.iloc[idx]
 
         col_l, col_r = st.columns(2)
         with col_l:
@@ -446,17 +445,17 @@ elif page == "Batch & Yield Calculator":
 # --- 3. HEAD-TO-HEAD COMPARATOR ---
 elif page == "Head-to-Head Comparator":
     st.subheader("⚔️ Side-by-Side Specimen Comparator")
-    if len(filtered_base) >= 2:
+    if len(df) >= 2:
         opts = [
             f"#{i+1}: {r['organism']} on {r['substrate']} [{r['enzyme']}]"
-            for i, (_, r) in enumerate(filtered_base.iterrows())
+            for i, (_, r) in enumerate(df.iterrows())
         ]
         c_a, c_b = st.columns(2)
         a_idx = c_a.selectbox("Specimen A", range(len(opts)), index=0, format_func=lambda i: opts[i])
         b_idx = c_b.selectbox("Specimen B", range(len(opts)), index=min(1, len(opts) - 1), format_func=lambda i: opts[i])
 
-        row_a = filtered_base.iloc[a_idx]
-        row_b = filtered_base.iloc[b_idx]
+        row_a = df.iloc[a_idx]
+        row_b = df.iloc[b_idx]
 
         comp_df = pd.DataFrame({
             "Metric": ["Organism", "Substrate", "Enzyme", "Mode", "Norm Yield (U/g dry)", "pH", "Temp (°C)", "Moisture (%)", "Time (hrs)", "Supplements"],
@@ -552,38 +551,99 @@ elif page == "Add / Import Data":
                 st.success(f"Imported {inserted} records.")
                 st.rerun()
 
-# --- 5. MATPLOTLIB PLATES (DARK THEME) ---
+# --- 5. MATPLOTLIB PLATES ---
 elif page == "Matplotlib Plates":
-    if not filtered_base.empty:
+    st.subheader("📈 Custom Matplotlib Specimen Plates")
+    if not df.empty:
         plt.style.use("dark_background")
-        top_k = st.slider("Top Categories to Display", 5, 15, 8)
-        log_y = st.checkbox("Use Log Scale", value=False)
 
-        left, right = st.columns(2)
-        with left:
-            top_enz = filtered_base.groupby("enzyme")["norm_yield"].max().sort_values(ascending=True).tail(top_k)
-            fig, ax = plt.subplots(figsize=(6.5, 4.2))
-            fig.patch.set_facecolor("#121b22")
-            ax.set_facecolor("#121b22")
-            ax.barh(top_enz.index, top_enz.values, color="#38bdf8")
-            if log_y:
-                ax.set_xscale("log")
-            ax.set_xlabel("Max Yield (U/g dry)")
-            ax.set_title(f"Top {top_k} Enzymes by Peak Yield")
-            ax.grid(axis="x", linestyle="--", alpha=0.25)
-            plt.tight_layout()
-            st.pyplot(fig)
+        c_dim, c_metric = st.columns([1.2, 1])
+        focus_dim = c_dim.selectbox(
+            "1. What do you want to focus on?",
+            ["Substrate", "Organism", "Enzyme"],
+        )
+        agg_stat = c_metric.selectbox(
+            "2. Yield summary to plot",
+            ["Peak Yield (Max)", "Typical Yield (Median)", "All Individual Runs"],
+        )
 
-        with right:
-            top_sub = filtered_base.groupby("substrate")["norm_yield"].max().sort_values(ascending=True).tail(top_k)
-            fig, ax = plt.subplots(figsize=(6.5, 4.2))
-            fig.patch.set_facecolor("#121b22")
-            ax.set_facecolor("#121b22")
-            ax.barh(top_sub.index, top_sub.values, color="#34d399")
-            if log_y:
-                ax.set_xscale("log")
-            ax.set_xlabel("Max Yield (U/g dry)")
-            ax.set_title(f"Top {top_k} Substrates by Peak Yield")
-            ax.grid(axis="x", linestyle="--", alpha=0.25)
-            plt.tight_layout()
-            st.pyplot(fig)
+        col_map = {
+            "Substrate": ("substrate", "organism", "enzyme"),
+            "Organism": ("organism", "substrate", "enzyme"),
+            "Enzyme": ("enzyme", "organism", "substrate"),
+        }
+        primary_col, sec_col, tert_col = col_map[focus_dim]
+
+        available_items = sorted(df[primary_col].dropna().unique().tolist())
+        selected_items = st.multiselect(
+            f"3. Select one or more {focus_dim}s to inspect",
+            options=available_items,
+            default=available_items[:3],
+        )
+
+        breakdown_by = st.selectbox(
+            "4. Plot / break down against",
+            [sec_col.title(), tert_col.title(), "None (Direct Comparison)"],
+        )
+
+        sub_df = df[df[primary_col].isin(selected_items)].copy() if selected_items else df.copy()
+
+        if sub_df.empty:
+            st.warning("No records match your selection.")
+        else:
+            left, right = st.columns(2)
+
+            with left:
+                fig, ax = plt.subplots(figsize=(6.8, 4.5))
+                fig.patch.set_facecolor("#121b22")
+                ax.set_facecolor("#121b22")
+
+                if agg_stat == "All Individual Runs":
+                    ordered = sub_df.sort_values("norm_yield", ascending=True)
+                    labels = [f"{r[primary_col]} | {r[sec_col]}" for _, r in ordered.iterrows()]
+                    ax.barh(labels, ordered["norm_yield"].values, color="#38bdf8")
+                    ax.set_ylabel(f"{focus_dim} & {sec_col.title()}")
+                else:
+                    stat_fn = "max" if "Max" in agg_stat else "median"
+                    if breakdown_by == "None (Direct Comparison)":
+                        grp = sub_df.groupby(primary_col)["norm_yield"].agg(stat_fn).sort_values(ascending=True)
+                        ax.barh(grp.index, grp.values, color="#38bdf8")
+                        ax.set_ylabel(focus_dim)
+                    else:
+                        b_col = breakdown_by.lower()
+                        piv = sub_df.pivot_table(
+                            index=primary_col,
+                            columns=b_col,
+                            values="norm_yield",
+                            aggfunc=stat_fn,
+                        )
+                        top_cats = sub_df.groupby(b_col)["norm_yield"].max().nlargest(6).index
+                        piv = piv[[c for c in top_cats if c in piv.columns]]
+                        piv.plot(kind="barh", ax=ax, width=0.78)
+                        ax.legend(title=breakdown_by, fontsize=8, title_fontsize=8)
+                        ax.set_ylabel(focus_dim)
+
+                ax.set_xlabel(f"{agg_stat} (U/g dry)")
+                ax.set_title(f"{focus_dim} Yield Breakdown")
+                ax.grid(axis="x", linestyle="--", alpha=0.25)
+                plt.tight_layout()
+                st.pyplot(fig)
+
+            with right:
+                fig, ax = plt.subplots(figsize=(6.8, 4.5))
+                fig.patch.set_facecolor("#121b22")
+                ax.set_facecolor("#121b22")
+                ax.scatter(
+                    sub_df["temp_c"],
+                    sub_df["norm_yield"],
+                    c="#34d399",
+                    alpha=0.85,
+                    edgecolors="#0b1115",
+                    s=65,
+                )
+                ax.set_xlabel("Incubation Temperature (°C)")
+                ax.set_ylabel("Normalized Yield (U/g dry)")
+                ax.set_title("Temperature vs. Yield for Selected Items")
+                ax.grid(True, linestyle="--", alpha=0.25)
+                plt.tight_layout()
+                st.pyplot(fig)
