@@ -42,7 +42,7 @@ Trametes hirsuta,Lemon Peel,laccase,172.0,U/g dry,70.0,5.0,28.0,192.0,CuSO4,172.
 Aspergillus terreus,Citrus Peel,polygalacturonase,365.0,U/g dry,65.0,5.0,35.0,96.0,Ammonium sulfate,365.0,HIGH,10.1007/s12010-009-8615-y,SSF
 Penicillium italicum,Citrus Peel,pectin lyase,96.0,U/g dry,65.0,5.0,28.0,96.0,Yeast extract,96.0,HIGH,10.1016/j.procbio.2004.12.015,SSF
 Aspergillus niger,Mandarin Peel,pectinase,475.0,U/g dry,65.0,5.0,30.0,96.0,Ammonium sulfate,475.0,HIGH,10.1016/j.biortech.2010.08.055,SSF
-Pleurotus dryinus,Mandarin Peel,laccase,128.0,U/g dry,70.0,5.5,28.0,216.0,None,128.0,HIGH,10.1016/j.biortech.2006.02.025,SSF
+Pleurotus dryinus,Mandarin Peel,laccase,128.0,U/g dry,70.0,5.5,28.0,216.0,,128.0,HIGH,10.1016/j.biortech.2006.02.025,SSF
 Aspergillus niger,Grapefruit Peel,naringinase,62.0,U/g dry,65.0,5.0,30.0,96.0,Peptone,62.0,HIGH,10.1016/j.foodchem.2012.03.081,SSF
 Aspergillus niger,Apple Pomace,polygalacturonase,780.0,U/g dry,65.0,4.5,30.0,96.0,Ammonium sulfate,780.0,HIGH,10.1016/j.biortech.2009.08.087,SSF
 Aspergillus niger,Apple Pomace,xylanase,340.0,U/g dry,65.0,4.8,30.0,96.0,Yeast extract,340.0,HIGH,10.1016/j.biortech.2008.04.032,SSF
@@ -56,7 +56,7 @@ Aspergillus awamori,Grape Pomace,polygalacturonase,425.0,U/g dry,65.0,5.0,30.0,9
 Aspergillus awamori,Grape Pomace,cellulase,21.5,U/g dry,65.0,5.0,30.0,96.0,Peptone,21.5,HIGH,10.1007/s12010-007-8077-z,SSF
 Aspergillus niger,Grape Pomace,tannase,112.0,U/g dry,60.0,5.0,30.0,72.0,Tannic acid,112.0,HIGH,10.1016/j.procbio.2006.08.014,SSF
 Trametes hirsuta,Grape Pomace,laccase,265.0,U/g dry,70.0,5.0,28.0,192.0,CuSO4,265.0,HIGH,10.1016/j.biortech.2007.01.031,SSF
-Pleurotus ostreatus,Grape Pomace,laccase,178.0,U/g dry,70.0,5.5,28.0,240.0,None,178.0,HIGH,10.1016/j.biortech.2009.02.049,SSF
+Pleurotus ostreatus,Grape Pomace,laccase,178.0,U/g dry,70.0,5.5,28.0,240.0,,178.0,HIGH,10.1016/j.biortech.2009.02.049,SSF
 Aspergillus oryzae,Grape Pomace,protease,390.0,U/g dry,60.0,6.0,30.0,72.0,Peptone,390.0,HIGH,10.1016/j.biortech.2011.04.063,SSF
 Aspergillus niger,Banana Peel,alpha-amylase,315.0,U/g dry,65.0,5.5,30.0,72.0,Peptone,315.0,HIGH,10.1016/j.biortech.2009.04.028,SSF
 Aspergillus niger,Banana Peel,invertase,460.0,U/g dry,65.0,5.5,30.0,72.0,Yeast extract,460.0,HIGH,10.1007/s12010-011-9312-1,SSF
@@ -94,16 +94,16 @@ Bacillus amyloliquefaciens,Cassava Bagasse,alpha-amylase,625.0,U/g dry,65.0,7.0,
 Trichoderma harzianum,Cassava Bagasse,cellulase,28.5,U/g dry,70.0,5.0,30.0,120.0,Peptone,28.5,HIGH,10.1016/j.biortech.2009.06.074,SSF
 Aspergillus niger,Cassava Peel,alpha-amylase,370.0,U/g dry,65.0,5.5,30.0,72.0,Ammonium sulfate,370.0,HIGH,10.1016/j.biortech.2008.05.019,SSF
 Rhizopus oligosporus,Cassava Peel,glucoamylase,295.0,U/g dry,65.0,5.0,30.0,72.0,Urea,295.0,HIGH,10.1007/s11274-008-9814-3,SSF
-Aspergillus oryzae,Soybean Meal,protease,1180.0,U/g dry,55.0,7.0,30.0,72.0,None,1180.0,HIGH,10.1016/j.procbio.2005.01.025,SSF
+Aspergillus oryzae,Soybean Meal,protease,1180.0,U/g dry,55.0,7.0,30.0,72.0,,1180.0,HIGH,10.1016/j.procbio.2005.01.025,SSF
 Aspergillus oryzae,Soybean Meal,alpha-amylase,390.0,U/g dry,55.0,6.0,30.0,72.0,Starch,390.0,HIGH,10.1016/j.biortech.2007.04.038,SSF
 Aspergillus oryzae,Soybean Meal,phytase,210.0,U/g dry,60.0,5.5,30.0,96.0,Glucose,210.0,HIGH,10.1016/j.enzmictec.2005.08.029,SSF
 Aspergillus niger,Soybean Meal,phytase,340.0,U/g dry,60.0,5.0,30.0,96.0,Glucose,340.0,HIGH,10.1016/j.biortech.2006.07.035,SSF
-Aspergillus niger,Soybean Meal,acid protease,890.0,U/g dry,55.0,4.5,30.0,72.0,None,890.0,HIGH,10.1016/j.procbio.2006.09.014,SSF
+Aspergillus niger,Soybean Meal,acid protease,890.0,U/g dry,55.0,4.5,30.0,72.0,,890.0,HIGH,10.1016/j.procbio.2006.09.014,SSF
 Aspergillus niger,Soybean Meal,beta-mannanase,275.0,U/g dry,60.0,5.0,30.0,96.0,Locust bean gum,275.0,HIGH,10.1016/j.biortech.2009.01.062,SSF
-Bacillus subtilis,Soybean Meal,protease,960.0,U/g dry,55.0,7.5,37.0,48.0,None,960.0,HIGH,10.1016/j.biortech.2008.03.047,SSF
+Bacillus subtilis,Soybean Meal,protease,960.0,U/g dry,55.0,7.5,37.0,48.0,,960.0,HIGH,10.1016/j.biortech.2008.03.047,SSF
 Bacillus subtilis,Soybean Meal,nattokinase,420.0,U/g dry,55.0,7.5,37.0,48.0,Glycerol,420.0,HIGH,10.1016/j.procbio.2007.02.018,SSF
-Bacillus licheniformis,Soybean Meal,alkaline protease,1050.0,U/g dry,55.0,8.5,40.0,48.0,None,1050.0,HIGH,10.1016/j.biortech.2009.07.053,SSF
-Rhizopus oligosporus,Soybean Meal,protease,640.0,U/g dry,55.0,6.0,30.0,72.0,None,640.0,HIGH,10.1016/j.foodchem.2007.08.059,SSF
+Bacillus licheniformis,Soybean Meal,alkaline protease,1050.0,U/g dry,55.0,8.5,40.0,48.0,,1050.0,HIGH,10.1016/j.biortech.2009.07.053,SSF
+Rhizopus oligosporus,Soybean Meal,protease,640.0,U/g dry,55.0,6.0,30.0,72.0,,640.0,HIGH,10.1016/j.foodchem.2007.08.059,SSF
 Aspergillus ficuum,Soybean Meal,phytase,385.0,U/g dry,60.0,5.0,30.0,96.0,Glucose,385.0,HIGH,10.1016/S0960-8524(02)00045-7,SSF
 Mucor racemosus,Soybean Meal,phytase,260.0,U/g dry,60.0,5.5,30.0,96.0,Glucose,260.0,HIGH,10.1016/j.enzmictec.2004.08.034,SSF
 Aspergillus oryzae,Soybean Hulls,pectinase,310.0,U/g dry,65.0,5.0,30.0,96.0,Ammonium sulfate,310.0,HIGH,10.1016/j.biortech.2010.06.082,SSF
@@ -121,16 +121,16 @@ Bacillus subtilis,Palm Kernel Cake,beta-mannanase,330.0,U/g dry,60.0,7.0,37.0,48
 Trichoderma reesei,Palm Kernel Cake,cellulase,25.0,U/g dry,65.0,5.0,28.0,120.0,Urea,25.0,HIGH,10.1016/j.biortech.2009.08.053,SSF
 Rhizopus oryzae,Palm Kernel Cake,lipase,240.0,U/g dry,60.0,6.0,30.0,72.0,Olive oil,240.0,HIGH,10.1007/s12010-011-9214-2,SSF
 Aspergillus niger,Groundnut Oil Cake,lipase,265.0,U/g dry,60.0,6.0,30.0,72.0,Olive oil,265.0,HIGH,10.1016/j.procbio.2005.04.012,SSF
-Aspergillus oryzae,Groundnut Oil Cake,protease,840.0,U/g dry,55.0,7.0,30.0,72.0,None,840.0,HIGH,10.1016/j.biortech.2006.11.031,SSF
+Aspergillus oryzae,Groundnut Oil Cake,protease,840.0,U/g dry,55.0,7.0,30.0,72.0,,840.0,HIGH,10.1016/j.biortech.2006.11.031,SSF
 Candida rugosa,Groundnut Oil Cake,lipase,415.0,U/g dry,60.0,6.5,30.0,72.0,Olive oil,415.0,HIGH,10.1016/j.enzmictec.2004.05.019,SSF
 Rhizopus homothallicus,Groundnut Oil Cake,lipase,510.0,U/g dry,60.0,6.0,35.0,72.0,Olive oil,510.0,HIGH,10.1016/j.procbio.2005.12.018,SSF
 Aspergillus niger,Mustard Oil Cake,phytase,215.0,U/g dry,60.0,5.0,30.0,96.0,Glucose,215.0,HIGH,10.1016/j.biortech.2007.02.044,SSF
-Aspergillus oryzae,Mustard Oil Cake,protease,760.0,U/g dry,55.0,6.5,30.0,72.0,None,760.0,HIGH,10.1016/j.procbio.2007.06.018,SSF
+Aspergillus oryzae,Mustard Oil Cake,protease,760.0,U/g dry,55.0,6.5,30.0,72.0,,760.0,HIGH,10.1016/j.procbio.2007.06.018,SSF
 Pseudomonas aeruginosa,Mustard Oil Cake,lipase,345.0,U/g dry,60.0,7.5,37.0,48.0,Olive oil,345.0,HIGH,10.1016/j.biortech.2008.09.027,SSF
 Aspergillus niger,Sesame Oil Cake,lipase,250.0,U/g dry,60.0,6.0,30.0,72.0,Olive oil,250.0,HIGH,10.1016/j.procbio.2006.02.014,SSF
-Aspergillus oryzae,Sesame Oil Cake,protease,790.0,U/g dry,55.0,7.0,30.0,72.0,None,790.0,HIGH,10.1016/j.biortech.2007.10.039,SSF
+Aspergillus oryzae,Sesame Oil Cake,protease,790.0,U/g dry,55.0,7.0,30.0,72.0,,790.0,HIGH,10.1016/j.biortech.2007.10.039,SSF
 Aspergillus niger,Sunflower Oil Cake,phytase,245.0,U/g dry,60.0,5.0,30.0,96.0,Glucose,245.0,HIGH,10.1016/j.enzmictec.2005.11.024,SSF
-Aspergillus oryzae,Sunflower Oil Cake,protease,820.0,U/g dry,55.0,7.0,30.0,72.0,None,820.0,HIGH,10.1016/j.biortech.2008.01.044,SSF
+Aspergillus oryzae,Sunflower Oil Cake,protease,820.0,U/g dry,55.0,7.0,30.0,72.0,,820.0,HIGH,10.1016/j.biortech.2008.01.044,SSF
 Penicillium chrysogenum,Sunflower Oil Cake,lipase,270.0,U/g dry,60.0,6.0,28.0,72.0,Olive oil,270.0,HIGH,10.1016/j.procbio.2006.11.021,SSF
 Candida cylindracea,Olive Oil Cake,lipase,460.0,U/g dry,60.0,6.5,30.0,72.0,Olive oil,460.0,HIGH,10.1016/j.biortech.2007.04.052,SSF
 Aspergillus ibericus,Olive Pomace,lipase,390.0,U/g dry,60.0,6.0,30.0,72.0,Olive oil,390.0,HIGH,10.1016/j.biortech.2012.02.078,SSF
@@ -170,13 +170,13 @@ Aspergillus aculeatus,Tea Waste,tannase,158.0,U/g dry,60.0,5.0,30.0,72.0,Ammoniu
 Trametes versicolor,Tea Waste,laccase,162.0,U/g dry,70.0,5.0,28.0,192.0,CuSO4,162.0,HIGH,10.1016/j.biortech.2010.02.078,SSF
 Serratia marcescens,Shrimp Shell Waste,chitinase,118.0,U/g dry,60.0,7.0,30.0,96.0,Colloidal chitin,118.0,HIGH,10.1016/j.procbio.2005.08.021,SSF
 Beauveria bassiana,Shrimp Shell Waste,chitinase,96.0,U/g dry,65.0,6.0,28.0,120.0,Glucose,96.0,HIGH,10.1016/j.biortech.2007.03.058,SSF
-Metarhizium anisopliae,Shrimp Shell Waste,chitinase,88.5,U/g dry,65.0,6.0,28.0,120.0,None,88.5,HIGH,10.1016/j.enzmictec.2006.07.024,SSF
+Metarhizium anisopliae,Shrimp Shell Waste,chitinase,88.5,U/g dry,65.0,6.0,28.0,120.0,,88.5,HIGH,10.1016/j.enzmictec.2006.07.024,SSF
 Bacillus licheniformis,Shrimp Shell Waste,protease,680.0,U/g dry,60.0,8.0,37.0,48.0,Glucose,680.0,HIGH,10.1016/j.biortech.2008.04.051,SSF
 Bacillus subtilis,Shrimp Shell Waste,chitinase,74.0,U/g dry,60.0,7.0,37.0,72.0,Yeast extract,74.0,HIGH,10.1016/j.procbio.2009.02.011,SSF
 Serratia marcescens,Crab Shell Waste,chitinase,104.0,U/g dry,60.0,7.0,30.0,96.0,Colloidal chitin,104.0,HIGH,10.1016/j.biortech.2006.10.044,SSF
 Bacillus licheniformis,Feather Meal,keratinase,495.0,U/g dry,60.0,8.0,45.0,72.0,Yeast extract,495.0,HIGH,10.1016/j.biortech.2007.06.048,SSF
 Bacillus subtilis,Feather Meal,keratinase,430.0,U/g dry,60.0,7.5,37.0,72.0,Peptone,430.0,HIGH,10.1016/j.procbio.2006.03.031,SSF
-Aspergillus oryzae,Feather Meal,keratinase,365.0,U/g dry,60.0,7.0,30.0,96.0,None,365.0,HIGH,10.1016/j.biortech.2009.05.049,SSF
+Aspergillus oryzae,Feather Meal,keratinase,365.0,U/g dry,60.0,7.0,30.0,96.0,,365.0,HIGH,10.1016/j.biortech.2009.05.049,SSF
 Aspergillus niger,Orange Peel,pectinase,92.5,U/mL,85.0,5.0,30.0,96.0,Ammonium sulfate,925.0,LOW,10.1016/j.procbio.2004.09.012,SmF
 Penicillium chrysogenum,Orange Peel,pectinase,78.0,U/mL,85.0,5.5,28.0,96.0,Yeast extract,780.0,LOW,10.1016/j.biortech.2007.03.019,SmF
 Aspergillus oryzae,Apple Pomace,pectinase,115.0,U/mL,85.0,4.5,30.0,96.0,Ammonium sulfate,1150.0,LOW,10.1016/j.biortech.2010.03.071,SmF
