@@ -412,7 +412,7 @@ def save_records_and_commit_github(new_rows):
         conn.close()
 
     if not github_configured():
-        return inserted, False, "Saved locally in SQLite (configure GITHUB_TOKEN & GITHUB_REPO in Streamlit Secrets for permanent GitHub CSV sync)."
+        return inserted, False, "GitHub secrets (GITHUB_TOKEN & GITHUB_REPO) are not configured."
 
     try:
         gh_df, sha = fetch_github_csv()
@@ -429,7 +429,7 @@ def save_records_and_commit_github(new_rows):
         )
         return inserted, ok, msg
     except Exception as exc:
-        return inserted, False, f"Saved locally, but GitHub commit failed: {exc}"
+        return inserted, False, f"GitHub commit failed: {exc}"
 
 
 def normalize_yield(raw_yield, raw_unit, moisture_pct):
@@ -666,6 +666,10 @@ elif page == "Head-to-Head Comparator":
 
 # --- 4. ADD / IMPORT DATA ---
 elif page == "Add / Import Data":
+    if "status_banner" in st.session_state and st.session_state["status_banner"]:
+        st.success(st.session_state["status_banner"])
+        st.session_state["status_banner"] = ""
+
     if github_configured():
         st.info(f"Connected to GitHub repository `{GITHUB_REPO}` (`{GITHUB_CSV_PATH}` on branch `{GITHUB_BRANCH}`). New records will be committed automatically.")
     else:
@@ -709,10 +713,10 @@ elif page == "Add / Import Data":
                         mode,
                     )
                     inserted, gh_ok, gh_msg = save_records_and_commit_github([row])
-                    if gh_ok:
-                        st.success(f"Saved & committed to GitHub! Normalized yield = {ny:.2f} U/g dry ({cf}).")
-                    else:
-                        st.warning(f"Inserted {inserted} row(s) in session DB. {gh_msg}")
+                    sync_note = "and synced to GitHub." if gh_ok else f"({gh_msg})"
+                    st.session_state["status_banner"] = (
+                        f"Database updated successfully ({inserted} new row added, normalized yield = {ny:.2f} U/g dry [{cf}]) {sync_note}"
+                    )
                     st.rerun()
                 else:
                     st.error("Fill in Organism, Substrate, Enzyme, and Raw Yield > 0.")
@@ -748,10 +752,10 @@ elif page == "Add / Import Data":
                         )
                     )
                 inserted, gh_ok, gh_msg = save_records_and_commit_github(rows_to_save)
-                if gh_ok:
-                    st.success(f"Imported {inserted} records and committed to `{GITHUB_CSV_PATH}` on GitHub!")
-                else:
-                    st.warning(f"Imported {inserted} records locally. {gh_msg}")
+                sync_note = f"and committed to `{GITHUB_CSV_PATH}` on GitHub." if gh_ok else f"({gh_msg})"
+                st.session_state["status_banner"] = (
+                    f"Database updated successfully ({inserted} new record(s) imported) {sync_note}"
+                )
                 st.rerun()
 
 # --- 5. MATPLOTLIB PLATES ---
