@@ -1,1 +1,1 @@
-# ssf-enzyme-database
+# The Biocatalyst Archive
