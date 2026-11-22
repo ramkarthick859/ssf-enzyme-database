@@ -1,41 +1,18 @@
-import base64
-import io
-import os
-import sqlite3
-import requests
+import base64, io, os, sqlite3, requests
 import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
 
-st.set_page_config(
-    page_title="THE BIOCATALYST ARCHIVE | SSF & SmF Specimen Index",
-    page_icon="🏛️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="THE BIOCATALYST ARCHIVE", page_icon="🏛️", layout="wide")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "ssf_database.db")
-
-RECORD_COLUMNS = [
-    "organism",
-    "substrate",
-    "enzyme",
-    "raw_yield",
-    "raw_unit",
-    "moisture_pct",
-    "ph",
-    "temp_c",
-    "time_hrs",
-    "supplements",
-    "norm_yield",
-    "confidence",
-    "reference",
-    "fermentation_mode",
-]
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ssf_database.db")
+COLS = ["organism", "substrate", "enzyme", "raw_yield", "raw_unit", "moisture_pct", "ph", "temp_c",
+        "time_hrs", "supplements", "norm_yield", "confidence", "reference", "fermentation_mode"]
+DEDUPE = ["organism", "substrate", "enzyme", "raw_yield", "raw_unit", "norm_yield", "reference", "fermentation_mode"]
 
 
-def _get_secret(key, default=""):
+# ---------- GitHub sync ----------
+def secret(key, default=""):
     try:
         if key in st.secrets:
             return str(st.secrets[key]).strip()
@@ -44,215 +21,45 @@ def _get_secret(key, default=""):
     return os.environ.get(key, default).strip()
 
 
-GITHUB_TOKEN = _get_secret("GITHUB_TOKEN")
-GITHUB_REPO = _get_secret("GITHUB_REPO")  # e.g., "username/repo-name"
-GITHUB_BRANCH = _get_secret("GITHUB_BRANCH", "main")
-GITHUB_CSV_PATH = _get_secret("GITHUB_CSV_PATH", "data/user_uploads.csv")
-
-
-def github_configured():
-    return bool(GITHUB_TOKEN and GITHUB_REPO)
-
-
-def _github_headers():
-    return {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
+GH_TOKEN, GH_REPO = secret("GITHUB_TOKEN"), secret("GITHUB_REPO")
+GH_BRANCH = secret("GITHUB_BRANCH", "main")
+GH_PATH = secret("GITHUB_CSV_PATH", "data/user_uploads.csv")
+GH_OK = bool(GH_TOKEN and GH_REPO)
+GH_URL = f"https://api.github.com/repos/{GH_REPO}/contents/{GH_PATH}"
+GH_HEAD = {"Authorization": f"Bearer {GH_TOKEN}", "Accept": "application/vnd.github+json"}
 
 
 def fetch_github_csv():
-    """Fetch user_uploads.csv from GitHub. Returns (DataFrame, sha_or_None)."""
-    if not github_configured():
-        return pd.DataFrame(columns=RECORD_COLUMNS), None
-
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_CSV_PATH}"
-    resp = requests.get(url, headers=_github_headers(), params={"ref": GITHUB_BRANCH}, timeout=15)
-    if resp.status_code == 404:
-        return pd.DataFrame(columns=RECORD_COLUMNS), None
-    resp.raise_for_status()
-
-    payload = resp.json()
-    sha = payload.get("sha")
-    content_b64 = payload.get("content", "")
-    if not content_b64:
-        return pd.DataFrame(columns=RECORD_COLUMNS), sha
-
-    raw_bytes = base64.b64decode(content_b64)
-    if not raw_bytes.strip():
-        return pd.DataFrame(columns=RECORD_COLUMNS), sha
-
-    csv_df = pd.read_csv(io.BytesIO(raw_bytes))
-    for col in RECORD_COLUMNS:
-        if col not in csv_df.columns:
-            csv_df[col] = ""
-    return csv_df[RECORD_COLUMNS], sha
+    """Returns (DataFrame, sha_or_None)."""
+    empty = pd.DataFrame(columns=COLS)
+    if not GH_OK:
+        return empty, None
+    r = requests.get(GH_URL, headers=GH_HEAD, params={"ref": GH_BRANCH}, timeout=15)
+    if r.status_code == 404:
+        return empty, None
+    r.raise_for_status()
+    j = r.json()
+    raw = base64.b64decode(j.get("content", ""))
+    if not raw.strip():
+        return empty, j.get("sha")
+    df = pd.read_csv(io.BytesIO(raw))
+    for c in COLS:
+        if c not in df.columns:
+            df[c] = ""
+    return df[COLS], j.get("sha")
 
 
-def push_github_csv(df_user_rows, sha=None, commit_msg="Update user_uploads.csv from BioCatalyst Archive"):
-    """Commit updated user_uploads.csv back to GitHub."""
-    if not github_configured():
-        return False, "GitHub secrets (GITHUB_TOKEN / GITHUB_REPO) are not configured."
-
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_CSV_PATH}"
-    if sha is None:
-        check = requests.get(url, headers=_github_headers(), params={"ref": GITHUB_BRANCH}, timeout=15)
-        if check.status_code == 200:
-            sha = check.json().get("sha")
-
-    csv_bytes = df_user_rows[RECORD_COLUMNS].to_csv(index=False).encode("utf-8")
-    body = {
-        "message": commit_msg,
-        "content": base64.b64encode(csv_bytes).decode("ascii"),
-        "branch": GITHUB_BRANCH,
-    }
+def push_github_csv(df, sha, msg):
+    body = {"message": msg, "branch": GH_BRANCH,
+            "content": base64.b64encode(df[COLS].to_csv(index=False).encode()).decode()}
     if sha:
         body["sha"] = sha
-
-    put_resp = requests.put(url, headers=_github_headers(), json=body, timeout=20)
-    if put_resp.status_code in (200, 201):
-        return True, "Committed to GitHub"
-    return False, f"GitHub API error {put_resp.status_code}: {put_resp.text}"
+    r = requests.put(GH_URL, headers=GH_HEAD, json=body, timeout=20)
+    return (True, "Committed to GitHub") if r.status_code in (200, 201) else (False, f"GitHub error {r.status_code}: {r.text}")
 
 
-st.markdown(
-    """
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-
-        .stApp {
-            background-color: #0b1115 !important;
-            color: #f1f5f9 !important;
-            font-family: 'Plus Jakarta Sans', sans-serif;
-        }
-        [data-testid="stHeader"] {
-            background-color: #0b1115 !important;
-        }
-        .stApp p, .stApp label, .stApp span, .stApp div, .stApp li {
-            color: #f1f5f9;
-        }
-
-        /* Left Sidebar Navigation */
-        [data-testid="stSidebar"] {
-            background-color: #111a20 !important;
-            border-right: 1px solid #243642 !important;
-            min-width: 265px !important;
-            max-width: 265px !important;
-            transform: none !important;
-            visibility: visible !important;
-        }
-        [data-testid="stSidebar"] * {
-            color: #f1f5f9 !important;
-        }
-        [data-testid="collapsedControl"] {
-            display: none !important;
-        }
-
-        /* Top Archival Masthead */
-        .masthead {
-            background: linear-gradient(135deg, #132028 0%, #192c36 55%, #183b34 100%);
-            border: 1px solid #2c4a46;
-            border-radius: 16px;
-            padding: 1.5rem 1.9rem;
-            color: #f1f5f9 !important;
-            margin-bottom: 1rem;
-            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
-        }
-        .masthead-eyebrow {
-            font-size: 0.75rem;
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-            color: #6ee7b7 !important;
-            font-weight: 700;
-            margin-bottom: 0.3rem;
-        }
-        .masthead h1 {
-            font-family: 'Cormorant Garamond', serif;
-            font-size: 2.25rem;
-            font-weight: 700;
-            line-height: 1.1;
-            margin: 0;
-            color: #ffffff !important;
-        }
-        .masthead p {
-            margin: 0.45rem 0 0 0;
-            color: #cbd5e1 !important;
-            font-size: 0.95rem;
-            max-width: 820px;
-        }
-
-        /* Specimen Plate / Field Note Card */
-        .specimen-plate {
-            background: #121b22 !important;
-            border: 1px solid #263744 !important;
-            border-left: 5px solid #34d399 !important;
-            border-radius: 12px;
-            padding: 1.15rem 1.4rem;
-            margin: 0.85rem 0 1.15rem 0;
-            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-        }
-        .specimen-plate, .specimen-plate * {
-            color: #f1f5f9 !important;
-        }
-        .specimen-code {
-            font-size: 0.75rem;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            color: #6ee7b7 !important;
-            font-weight: 700;
-        }
-        .specimen-title {
-            font-family: 'Cormorant Garamond', serif;
-            font-size: 1.55rem;
-            font-weight: 700;
-            color: #ffffff !important;
-            margin: 0.15rem 0 0.4rem 0;
-        }
-        .tag-pill {
-            display: inline-block;
-            background: #172e29 !important;
-            color: #a7f3d0 !important;
-            border: 1px solid #2b594d !important;
-            border-radius: 999px;
-            padding: 0.2rem 0.7rem;
-            font-size: 0.8rem;
-            font-weight: 600;
-            margin-right: 0.35rem;
-            margin-top: 0.3rem;
-        }
-
-        /* Dark Metric Plaques */
-        div[data-testid="stMetric"] {
-            background-color: #121b22 !important;
-            border: 1px solid #263744 !important;
-            border-radius: 12px;
-            padding: 0.85rem 1rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-        div[data-testid="stMetric"] label,
-        div[data-testid="stMetric"] [data-testid="stMetricValue"],
-        div[data-testid="stMetric"] [data-testid="stMetricDelta"] {
-            color: #ffffff !important;
-        }
-        [data-testid="stMetricValue"] {
-            font-weight: 700 !important;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-def get_connection():
-    conn = sqlite3.connect(DB_PATH, timeout=30.0, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.execute("PRAGMA busy_timeout=30000;")
-    return conn
-
-
-VERIFIED_SEED_DATA = [
+# ---------- Database ----------
+SEED = [
     ("Aspergillus niger", "Banana Peel", "pectinase", 27.68, "U/mL", 60.0, 5.8, 32.4, 66.0, "Ammonium sulfate", 276.8, "LOW", "10.1007/s13197-014-1413-8", "SSF"),
     ("Fungal consortium", "Coffee Husk", "cellulase", 10.0, "U/g dry", 65.0, 5.0, 37.0, 96.0, "Compost", 10.0, "HIGH", "10.1016/j.scitotenv.2017.02.184", "SSF"),
     ("Trichoderma viride", "Banana Peel", "cellulase", 142.5, "U/g dry", 65.0, 5.5, 30.0, 72.0, "Peptone", 142.5, "HIGH", "10.5897/AJB10.1825", "SSF"),
@@ -284,17 +91,16 @@ VERIFIED_SEED_DATA = [
     ("Aspergillus oryzae", "Coconut Oil Cake", "protease", 1372.0, "U/g dry", 55.0, 6.0, 30.0, 48.0, "Peptone", 1372.0, "HIGH", "10.1016/j.jfoodeng.2005.05.022", "SSF"),
 ]
 
-INSERT_SQL = """
-INSERT INTO ssf_experiments (
-    organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct,
-    ph, temp_c, time_hrs, supplements, norm_yield, confidence, reference, fermentation_mode
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-"""
+INSERT_SQL = f"INSERT INTO ssf_experiments ({','.join(COLS)}) VALUES ({','.join('?' * len(COLS))})"
 
 
-def to_float(x, default=0.0):
-    if x is None:
-        return default
+def db():
+    conn = sqlite3.connect(DB_PATH, timeout=30.0, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    return conn
+
+
+def num(x, default=0.0):
     try:
         s = str(x).strip()
         return float(s) if s and s.lower() != "nan" else default
@@ -302,155 +108,105 @@ def to_float(x, default=0.0):
         return default
 
 
-def _record_exists(cursor, row):
-    cursor.execute(
-        """
-        SELECT 1 FROM ssf_experiments
-        WHERE organism = ? AND substrate = ? AND enzyme = ?
-          AND ABS(COALESCE(raw_yield, 0) - COALESCE(?, 0)) < 1e-6
-          AND COALESCE(raw_unit, '') = COALESCE(?, '')
-          AND ABS(COALESCE(norm_yield, 0) - COALESCE(?, 0)) < 1e-6
-          AND COALESCE(reference, '') = COALESCE(?, '')
-          AND COALESCE(fermentation_mode, 'SSF') = COALESCE(?, 'SSF')
-        LIMIT 1
-        """,
-        (row[0], row[1], row[2], row[3], row[4], row[10], row[12], row[13]),
-    )
-    return cursor.fetchone() is not None
+def normalize_yield(raw, unit, moisture):
+    unit, raw, moisture = str(unit).lower().strip(), num(raw), num(moisture, 50.0)
+    if "dry" in unit or "u/gds" in unit:
+        return round(raw, 2), "HIGH"
+    if "wet" in unit or unit == "u/g":
+        f = 1.0 - moisture / 100.0
+        return (round(raw / f, 2), "MEDIUM") if f > 0 else (round(raw, 2), "LOW")
+    if "ml" in unit:
+        return round(raw * 10.0, 2), "LOW"
+    return round(raw, 2), "LOW"
 
 
-def sync_from_github_into_db(cursor):
-    """Pull rows from GitHub CSV and insert any missing records into SQLite."""
-    if not github_configured():
-        return 0
-    try:
-        gh_df, _ = fetch_github_csv()
-    except Exception:
-        return 0
+def make_row(r, recompute=False):
+    """Turn a dict/Series into a DB tuple. recompute=True recalculates normalized yield."""
+    org, sub, enz = (str(r.get(k, "")).strip() for k in ("organism", "substrate", "enzyme"))
+    if not (org and sub and enz):
+        return None
+    raw, mo = num(r.get("raw_yield")), num(r.get("moisture_pct"), 50.0)
+    unit = str(r.get("raw_unit", "")).strip() or "U/g dry"
+    if recompute:
+        ny, cf = normalize_yield(raw, unit, mo)
+    else:
+        ny, cf = num(r.get("norm_yield")), str(r.get("confidence", "")).strip() or "LOW"
+    mode = "SmF" if str(r.get("fermentation_mode", "SSF")).strip().lower() == "smf" else "SSF"
+    return (org, sub, enz, raw, unit, mo, num(r.get("ph"), 5.0), num(r.get("temp_c"), 30.0),
+            num(r.get("time_hrs"), 72.0), str(r.get("supplements", "")).strip() or "None",
+            ny, cf, str(r.get("reference", "")).strip() or "Unknown", mode)
 
+
+def insert_rows(cur, rows):
+    """Insert rows that don't already exist. Returns number added."""
     added = 0
-    for _, r in gh_df.iterrows():
-        org = str(r.get("organism", "")).strip()
-        sub = str(r.get("substrate", "")).strip()
-        enz = str(r.get("enzyme", "")).strip()
-        if not org or not sub or not enz:
-            continue
-        row = (
-            org,
-            sub,
-            enz,
-            to_float(r.get("raw_yield"), 0.0),
-            str(r.get("raw_unit", "U/g dry")).strip() or "U/g dry",
-            to_float(r.get("moisture_pct"), 50.0),
-            to_float(r.get("ph"), 5.0),
-            to_float(r.get("temp_c"), 30.0),
-            to_float(r.get("time_hrs"), 72.0),
-            str(r.get("supplements", "None")).strip() or "None",
-            to_float(r.get("norm_yield"), 0.0),
-            str(r.get("confidence", "LOW")).strip() or "LOW",
-            str(r.get("reference", "Unknown")).strip() or "Unknown",
-            str(r.get("fermentation_mode", "SSF")).strip() or "SSF",
+    for row in rows:
+        cur.execute(
+            """SELECT 1 FROM ssf_experiments WHERE organism=? AND substrate=? AND enzyme=?
+               AND ABS(COALESCE(raw_yield,0)-?)<1e-6 AND COALESCE(raw_unit,'')=?
+               AND ABS(COALESCE(norm_yield,0)-?)<1e-6 AND COALESCE(reference,'')=?
+               AND COALESCE(fermentation_mode,'SSF')=? LIMIT 1""",
+            (row[0], row[1], row[2], row[3], row[4], row[10], row[12], row[13]),
         )
-        if not _record_exists(cursor, row):
-            cursor.execute(INSERT_SQL, row)
+        if cur.fetchone() is None:
+            cur.execute(INSERT_SQL, row)
             added += 1
     return added
 
 
 def init_db():
-    conn = get_connection()
+    conn = db()
     try:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS ssf_experiments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                organism TEXT, substrate TEXT, enzyme TEXT,
-                raw_yield REAL, raw_unit TEXT, moisture_pct REAL,
-                ph REAL, temp_c REAL, time_hrs REAL, supplements TEXT,
-                norm_yield REAL, confidence TEXT, reference TEXT,
-                fermentation_mode TEXT DEFAULT 'SSF'
-            )
-            """
-        )
-        cursor.execute("PRAGMA table_info(ssf_experiments)")
-        existing_cols = [col[1] for col in cursor.fetchall()]
-        if "fermentation_mode" not in existing_cols:
-            cursor.execute("ALTER TABLE ssf_experiments ADD COLUMN fermentation_mode TEXT DEFAULT 'SSF'")
-        conn.commit()
-
-        cursor.execute("SELECT COUNT(*) FROM ssf_experiments")
-        if cursor.fetchone()[0] == 0:
-            for row in VERIFIED_SEED_DATA:
-                cursor.execute(INSERT_SQL, row)
-            conn.commit()
-
-        sync_from_github_into_db(cursor)
+        cur = conn.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS ssf_experiments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, organism TEXT, substrate TEXT, enzyme TEXT,
+            raw_yield REAL, raw_unit TEXT, moisture_pct REAL, ph REAL, temp_c REAL, time_hrs REAL,
+            supplements TEXT, norm_yield REAL, confidence TEXT, reference TEXT,
+            fermentation_mode TEXT DEFAULT 'SSF')""")
+        cur.execute("PRAGMA table_info(ssf_experiments)")
+        if "fermentation_mode" not in [c[1] for c in cur.fetchall()]:
+            cur.execute("ALTER TABLE ssf_experiments ADD COLUMN fermentation_mode TEXT DEFAULT 'SSF'")
+        cur.execute("SELECT COUNT(*) FROM ssf_experiments")
+        if cur.fetchone()[0] == 0:
+            insert_rows(cur, SEED)
+        if GH_OK:  # pull saved user uploads from GitHub
+            try:
+                gh_df, _ = fetch_github_csv()
+                insert_rows(cur, [r for r in (make_row(x) for _, x in gh_df.iterrows()) if r])
+            except Exception:
+                pass
         conn.commit()
     finally:
         conn.close()
 
 
-init_db()
-
-
-def save_records_and_commit_github(new_rows):
-    """Save new records into SQLite and commit updated user_uploads.csv to GitHub."""
-    if not new_rows:
+def save_records(rows):
+    """Save to SQLite and commit to GitHub CSV. Returns (inserted, gh_ok, message)."""
+    if not rows:
         return 0, False, "No valid rows to save."
-
-    conn = get_connection()
-    inserted = 0
+    conn = db()
     try:
-        cursor = conn.cursor()
-        for row in new_rows:
-            if not _record_exists(cursor, row):
-                cursor.execute(INSERT_SQL, row)
-                inserted += 1
+        inserted = insert_rows(conn.cursor(), rows)
         conn.commit()
     finally:
         conn.close()
-
-    if not github_configured():
+    if not GH_OK:
         return inserted, False, "GitHub secrets (GITHUB_TOKEN & GITHUB_REPO) are not configured."
-
     try:
         gh_df, sha = fetch_github_csv()
-        new_df = pd.DataFrame(new_rows, columns=RECORD_COLUMNS)
-        combined = pd.concat([gh_df, new_df], ignore_index=True)
-        combined = combined.drop_duplicates(
-            subset=["organism", "substrate", "enzyme", "raw_yield", "raw_unit", "norm_yield", "reference", "fermentation_mode"],
-            keep="first",
-        )
-        ok, msg = push_github_csv(
-            combined,
-            sha=sha,
-            commit_msg=f"Add {inserted} specimen record(s) to {GITHUB_CSV_PATH}",
-        )
+        combined = pd.concat([gh_df, pd.DataFrame(rows, columns=COLS)], ignore_index=True)
+        combined = combined.drop_duplicates(subset=DEDUPE, keep="first")
+        ok, msg = push_github_csv(combined, sha, f"Add {inserted} specimen record(s)")
         return inserted, ok, msg
-    except Exception as exc:
-        return inserted, False, f"GitHub commit failed: {exc}"
+    except Exception as e:
+        return inserted, False, f"GitHub commit failed: {e}"
 
 
-def normalize_yield(raw_yield, raw_unit, moisture_pct):
-    unit = str(raw_unit).lower().strip()
-    raw_yield = to_float(raw_yield, 0.0)
-    moisture_pct = to_float(moisture_pct, 50.0)
-    if "dry" in unit or "u/gds" in unit:
-        return round(raw_yield, 2), "HIGH"
-    elif "wet" in unit or unit == "u/g":
-        factor = 1.0 - (moisture_pct / 100.0)
-        return (round(raw_yield / factor, 2), "MEDIUM") if factor > 0 else (round(raw_yield, 2), "LOW")
-    elif "ml" in unit:
-        return round(raw_yield * 10.0, 2), "LOW"
-    return round(raw_yield, 2), "LOW"
-
-
-def make_clickable_link(ref):
+def doi_link(ref):
     ref = str(ref).strip()
     if not ref or ref.lower() in ("unknown", "none", "nan"):
         return None
-    if ref.startswith("http://") or ref.startswith("https://"):
+    if ref.startswith("http"):
         return ref
     if ref.lower().startswith("pmc"):
         return f"https://www.ncbi.nlm.nih.gov/pmc/articles/{ref}/"
@@ -458,225 +214,171 @@ def make_clickable_link(ref):
 
 
 def load_data():
-    conn = get_connection()
+    conn = db()
     try:
         return pd.read_sql_query(
-            """
-            SELECT id, organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct,
-                   norm_yield, confidence, ph, temp_c, time_hrs, supplements, reference,
-                   COALESCE(fermentation_mode, 'SSF') AS fermentation_mode
-            FROM ssf_experiments
-            ORDER BY norm_yield DESC
-            """,
-            conn,
-        )
+            "SELECT id, " + ",".join(COLS[:-1]) + ", COALESCE(fermentation_mode,'SSF') AS fermentation_mode "
+            "FROM ssf_experiments ORDER BY norm_yield DESC", conn)
     finally:
         conn.close()
 
 
-def render_table(df, show_rank=True):
+def render_table(df):
     if df.empty:
         st.info("No specimen records match this query.")
         return
     out = df.copy()
-    if show_rank:
-        out.insert(0, "rank", [f"#{i+1}" for i in range(len(out))])
-    out["reported"] = out.apply(lambda r: f"{r['raw_yield']} {r['raw_unit']}", axis=1)
-    out["doi_link"] = out["reference"].apply(make_clickable_link)
-    cols = [
-        c for c in [
-            "rank", "fermentation_mode", "organism", "substrate", "enzyme",
-            "norm_yield", "reported", "confidence", "ph", "temp_c",
-            "moisture_pct", "time_hrs", "supplements", "doi_link"
-        ] if c in out.columns
-    ]
+    out.insert(0, "rank", [f"#{i + 1}" for i in range(len(out))])
+    out["reported"] = out["raw_yield"].astype(str) + " " + out["raw_unit"]
+    out["doi_link"] = out["reference"].apply(doi_link)
+    cols = ["rank", "fermentation_mode", "organism", "substrate", "enzyme", "norm_yield", "reported",
+            "confidence", "ph", "temp_c", "moisture_pct", "time_hrs", "supplements", "doi_link"]
     st.dataframe(
         out[cols],
         column_config={
             "doi_link": st.column_config.LinkColumn("Archive DOI", display_text="View Paper"),
             "norm_yield": st.column_config.NumberColumn("Norm Yield (U/g dry)", format="%.2f"),
         },
-        hide_index=True,
-        use_container_width=True,
+        hide_index=True, use_container_width=True,
     )
 
 
+# ---------- Style ----------
+st.markdown("""
+<style>
+.stApp, [data-testid="stHeader"] {background-color:#0b1115 !important; color:#f1f5f9;}
+[data-testid="stSidebar"] {background-color:#111a20 !important; border-right:1px solid #243642;}
+.masthead {background:linear-gradient(135deg,#132028,#183b34); border:1px solid #2c4a46;
+           border-radius:16px; padding:1.4rem 1.8rem; margin-bottom:1rem;}
+.masthead h1 {margin:0; color:#fff;} .masthead p {margin:.4rem 0 0; color:#cbd5e1;}
+.plate {background:#121b22; border:1px solid #263744; border-left:5px solid #34d399;
+        border-radius:12px; padding:1rem 1.3rem; margin:.8rem 0 1rem;}
+.pill {display:inline-block; background:#172e29; color:#a7f3d0; border:1px solid #2b594d;
+       border-radius:999px; padding:.2rem .7rem; font-size:.8rem; margin:.3rem .3rem 0 0;}
+div[data-testid="stMetric"] {background:#121b22; border:1px solid #263744; border-radius:12px; padding:.8rem 1rem;}
+</style>
+""", unsafe_allow_html=True)
+
+init_db()
 df = load_data()
 
-# --- LEFT SIDEBAR: NAVIGATION ONLY ---
 with st.sidebar:
     st.markdown("### 🏛️ Archive Navigation")
-    page = st.radio(
-        "Section",
-        [
-            "Specimen Catalogue",
-            "Batch & Yield Calculator",
-            "Head-to-Head Comparator",
-            "Add / Import Data",
-            "Matplotlib Plates",
-        ],
-        label_visibility="collapsed",
-    )
+    page = st.radio("Section", ["Specimen Catalogue", "Batch & Yield Calculator", "Head-to-Head Comparator",
+                                "Add / Import Data", "Matplotlib Plates"], label_visibility="collapsed")
     st.markdown("---")
     st.caption(f"Catalogued specimens: {len(df)}")
-    if github_configured():
-        st.caption(f"GitHub CSV sync: Active ({GITHUB_CSV_PATH})")
-    else:
-        st.caption("GitHub CSV sync: Not configured")
+    st.caption(f"GitHub CSV sync: {'Active (' + GH_PATH + ')' if GH_OK else 'Not configured'}")
 
-# --- MASTHEAD ---
-st.markdown(
-    """
-    <div class="masthead">
-        <div class="masthead-eyebrow">Bioprocess Specimen & Literature Repository</div>
-        <h1>The BioCatalyst Archive</h1>
-        <p>Curated solid-state (SSF) and submerged (SmF) enzyme records across non-cereal agro-industrial residues.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+st.markdown("""<div class="masthead"><h1>The BioCatalyst Archive</h1>
+<p>Curated solid-state (SSF) and submerged (SmF) enzyme records across non-cereal agro-industrial residues.</p></div>""",
+            unsafe_allow_html=True)
 
-# --- 1. SPECIMEN CATALOGUE, CONSTRAINT RECOMMENDER & OPERATING WINDOW ---
+# ---------- 1. Catalogue ----------
 if page == "Specimen Catalogue":
     with st.expander("🎯 Lab & Constraint Filters", expanded=True):
-        f_c1, f_c2, f_c3 = st.columns(3)
-        max_temp = f_c1.slider("Max Incubation Temp (°C)", 20.0, 95.0, 95.0, step=1.0)
-        mode_choice = f_c2.selectbox("Fermentation Regime", ["All", "SSF", "SmF"])
-        conf_only = f_c3.checkbox("HIGH confidence (dry-basis) only", value=False)
+        c1, c2, c3 = st.columns(3)
+        max_temp = c1.slider("Max Incubation Temp (°C)", 20.0, 95.0, 95.0, step=1.0)
+        mode_choice = c2.selectbox("Fermentation Regime", ["All", "SSF", "SmF"])
+        conf_only = c3.checkbox("HIGH confidence (dry-basis) only")
 
-    filtered_base = df[df["temp_c"] <= max_temp].copy()
+    base = df[df["temp_c"] <= max_temp]
     if mode_choice != "All":
-        filtered_base = filtered_base[filtered_base["fermentation_mode"] == mode_choice]
+        base = base[base["fermentation_mode"] == mode_choice]
     if conf_only:
-        filtered_base = filtered_base[filtered_base["confidence"] == "HIGH"]
+        base = base[base["confidence"] == "HIGH"]
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Active Specimens", len(filtered_base))
-    c2.metric("Peak Activity (U/g dry)", f"{filtered_base['norm_yield'].max():.2f}" if not filtered_base.empty else "0.00")
-    c3.metric("Median Activity (U/g dry)", f"{filtered_base['norm_yield'].median():.2f}" if not filtered_base.empty else "0.00")
-    c4.metric("Enzyme Taxa", filtered_base["enzyme"].nunique() if not filtered_base.empty else 0)
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Active Specimens", len(base))
+    m2.metric("Peak Activity (U/g dry)", f"{base['norm_yield'].max():.2f}" if len(base) else "0.00")
+    m3.metric("Median Activity (U/g dry)", f"{base['norm_yield'].median():.2f}" if len(base) else "0.00")
+    m4.metric("Enzyme Taxa", base["enzyme"].nunique())
 
     f1, f2, f3, f4 = st.columns(4)
-    org_sel = f1.selectbox("Organism", ["All"] + sorted(filtered_base["organism"].dropna().unique().tolist()))
-    sub_sel = f2.selectbox("Substrate Matrix", ["All"] + sorted(filtered_base["substrate"].dropna().unique().tolist()))
-    enz_sel = f3.selectbox("Enzyme", ["All"] + sorted(filtered_base["enzyme"].dropna().unique().tolist()))
-    kw_sel = f4.text_input("Keyword (Supplement / DOI)", placeholder="e.g., Peptone or 10.1016")
+    org = f1.selectbox("Organism", ["All"] + sorted(base["organism"].dropna().unique()))
+    sub = f2.selectbox("Substrate Matrix", ["All"] + sorted(base["substrate"].dropna().unique()))
+    enz = f3.selectbox("Enzyme", ["All"] + sorted(base["enzyme"].dropna().unique()))
+    kw = f4.text_input("Keyword (Supplement / DOI)", placeholder="e.g., Peptone or 10.1016").strip()
 
-    view = filtered_base.copy()
-    if org_sel != "All":
-        view = view[view["organism"] == org_sel]
-    if sub_sel != "All":
-        view = view[view["substrate"] == sub_sel]
-    if enz_sel != "All":
-        view = view[view["enzyme"] == enz_sel]
-    if kw_sel.strip():
-        q = kw_sel.strip()
-        view = view[
-            view["supplements"].str.contains(q, case=False, na=False)
-            | view["reference"].str.contains(q, case=False, na=False)
-            | view["organism"].str.contains(q, case=False, na=False)
-            | view["substrate"].str.contains(q, case=False, na=False)
-        ]
-
+    view = base
+    for col, val in (("organism", org), ("substrate", sub), ("enzyme", enz)):
+        if val != "All":
+            view = view[view[col] == val]
+    if kw:
+        mask = False
+        for col in ("supplements", "reference", "organism", "substrate"):
+            mask = mask | view[col].str.contains(kw, case=False, na=False)
+        view = view[mask]
     view = view.sort_values("norm_yield", ascending=False).reset_index(drop=True)
 
     if not view.empty:
-        top = view.iloc[0]
-        p_min, p_med, p_max = view["ph"].min(), view["ph"].median(), view["ph"].max()
-        t_min, t_med, t_max = view["temp_c"].min(), view["temp_c"].median(), view["temp_c"].max()
-        m_min, m_med, m_max = view["moisture_pct"].min(), view["moisture_pct"].median(), view["moisture_pct"].max()
-        h_min, h_med, h_max = view["time_hrs"].min(), view["time_hrs"].median(), view["time_hrs"].max()
+        t = view.iloc[0]
+        rng = lambda c, u="": f"{view[c].min()}–{view[c].max()}{u} (med {view[c].median():.1f})"
+        st.markdown(f"""
+        <div class="plate">
+          <b>Featured Reference Specimen • {t['fermentation_mode']} • {t['confidence']} Confidence</b>
+          <h3><em>{t['organism']}</em> on {t['substrate']} — {t['enzyme'].title()}</h3>
+          Measured at <b>pH {t['ph']}</b>, <b>{t['temp_c']}°C</b>, <b>{t['moisture_pct']}% moisture</b>,
+          <b>{t['time_hrs']} hrs</b> (Supplement: <em>{t['supplements']}</em>) yielding
+          <b>{t['norm_yield']:.2f} U/g dry</b> (Reported: {t['raw_yield']} {t['raw_unit']}).<br>
+          <span class="pill">pH: {rng('ph')}</span><span class="pill">Temp: {rng('temp_c', '°C')}</span>
+          <span class="pill">Moisture: {rng('moisture_pct', '%')}</span><span class="pill">Incubation: {rng('time_hrs', 'h')}</span>
+        </div>""", unsafe_allow_html=True)
 
-        st.markdown(
-            f"""
-            <div class="specimen-plate">
-                <div class="specimen-code">Featured Reference Specimen • {top['fermentation_mode']} • {top['confidence']} Confidence</div>
-                <div class="specimen-title"><em>{top['organism']}</em> on {top['substrate']} — {top['enzyme'].title()}</div>
-                <div>
-                    Measured at <strong>pH {top['ph']}</strong>, <strong>{top['temp_c']}°C</strong>,
-                    <strong>{top['moisture_pct']}% moisture</strong>, and <strong>{top['time_hrs']} hrs</strong>
-                    (Supplement: <em>{top['supplements']}</em>) yielding <strong>{top['norm_yield']:.2f} U/g dry</strong>
-                    (Reported: {top['raw_yield']} {top['raw_unit']}).
-                </div>
-                <div style="margin-top:0.5rem;">
-                    <span class="tag-pill">pH Window: {p_min}–{p_max} (med {p_med:.1f})</span>
-                    <span class="tag-pill">Temp Window: {t_min}–{t_max}°C (med {t_med:.1f}°C)</span>
-                    <span class="tag-pill">Moisture: {m_min}–{m_max}% (med {m_med:.1f}%)</span>
-                    <span class="tag-pill">Incubation: {h_min}–{h_max}h (med {h_med:.1f}h)</span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    render_table(view)
+    if not base.empty:
+        st.download_button("Export Filtered Catalogue (CSV)", base.drop(columns=["id"]).to_csv(index=False).encode(),
+                           file_name="biocatalyst_archive_filtered.csv", mime="text/csv")
 
-    render_table(view, show_rank=True)
-
-    if not filtered_base.empty:
-        csv_data = filtered_base.drop(columns=["id"]).to_csv(index=False).encode("utf-8")
-        st.download_button("Export Filtered Catalogue (CSV)", data=csv_data, file_name="biocatalyst_archive_filtered.csv", mime="text/csv")
-
-# --- 2. BATCH & YIELD CALCULATOR ---
+# ---------- 2. Calculator ----------
 elif page == "Batch & Yield Calculator":
     st.subheader("⚖️ Solid-State Batch Water & Total Activity Calculator")
-    st.caption("Estimate water/buffer addition for a target moisture level and total enzyme units for a chosen literature entry.")
+    st.caption("Estimate water/buffer for a target moisture level and total enzyme units for a chosen entry.")
+    labels = [f"{r.organism} | {r.substrate} | {r.enzyme} ({r.norm_yield:.1f} U/g dry)" for r in df.itertuples()]
+    idx = st.selectbox("Select Reference Specimen", range(len(labels)), format_func=lambda i: labels[i])
+    rec = df.iloc[idx]
+    left, right = st.columns(2)
+    with left:
+        dry = st.number_input("Dry Substrate Mass (g)", min_value=1.0, value=100.0, step=10.0)
+        target = st.slider("Target Moisture (%)", 20.0, 85.0, float(min(max(rec["moisture_pct"], 20), 85)), step=1.0)
+    with right:
+        water = dry * (target / 100) / (1 - target / 100)
+        st.metric("Estimated Water / Buffer to Add", f"{water:.1f} mL")
+        st.metric("Total Wet Batch Mass", f"{dry + water:.1f} g")
+        st.metric("Estimated Total Enzyme Activity", f"{dry * rec['norm_yield']:,.1f} U")
 
-    if not df.empty:
-        labels = [
-            f"{r['organism']} | {r['substrate']} | {r['enzyme']} ({r['norm_yield']:.1f} U/g dry)"
-            for _, r in df.iterrows()
-        ]
-        idx = st.selectbox("Select Reference Specimen", range(len(labels)), format_func=lambda i: labels[i])
-        rec = df.iloc[idx]
-
-        col_l, col_r = st.columns(2)
-        with col_l:
-            dry_mass_g = st.number_input("Dry Substrate Mass (g)", min_value=1.0, value=100.0, step=10.0)
-            target_moist = st.slider("Target Moisture (%)", min_value=20.0, max_value=85.0, value=float(rec["moisture_pct"]), step=1.0)
-        with col_r:
-            m_frac = target_moist / 100.0
-            water_ml = dry_mass_g * (m_frac / (1.0 - m_frac))
-            total_wet_g = dry_mass_g + water_ml
-            est_total_units = dry_mass_g * rec["norm_yield"]
-
-            st.metric("Estimated Water / Buffer to Add", f"{water_ml:.1f} mL")
-            st.metric("Total Wet Batch Mass", f"{total_wet_g:.1f} g")
-            st.metric("Estimated Total Enzyme Activity", f"{est_total_units:,.1f} U")
-
-# --- 3. HEAD-TO-HEAD COMPARATOR ---
+# ---------- 3. Comparator ----------
 elif page == "Head-to-Head Comparator":
     st.subheader("⚔️ Side-by-Side Specimen Comparator")
     if len(df) >= 2:
-        opts = [
-            f"#{i+1}: {r['organism']} on {r['substrate']} [{r['enzyme']}]"
-            for i, (_, r) in enumerate(df.iterrows())
-        ]
-        c_a, c_b = st.columns(2)
-        a_idx = c_a.selectbox("Specimen A", range(len(opts)), index=0, format_func=lambda i: opts[i])
-        b_idx = c_b.selectbox("Specimen B", range(len(opts)), index=min(1, len(opts) - 1), format_func=lambda i: opts[i])
-
-        row_a = df.iloc[a_idx]
-        row_b = df.iloc[b_idx]
-
-        comp_df = pd.DataFrame({
-            "Metric": ["Organism", "Substrate", "Enzyme", "Mode", "Norm Yield (U/g dry)", "pH", "Temp (°C)", "Moisture (%)", "Time (hrs)", "Supplements"],
-            "Specimen A": [row_a["organism"], row_a["substrate"], row_a["enzyme"], row_a["fermentation_mode"], row_a["norm_yield"], row_a["ph"], row_a["temp_c"], row_a["moisture_pct"], row_a["time_hrs"], row_a["supplements"]],
-            "Specimen B": [row_b["organism"], row_b["substrate"], row_b["enzyme"], row_b["fermentation_mode"], row_b["norm_yield"], row_b["ph"], row_b["temp_c"], row_b["moisture_pct"], row_b["time_hrs"], row_b["supplements"]],
+        opts = [f"#{i + 1}: {r.organism} on {r.substrate} [{r.enzyme}]" for i, r in enumerate(df.itertuples())]
+        ca, cb = st.columns(2)
+        a = ca.selectbox("Specimen A", range(len(opts)), index=0, format_func=lambda i: opts[i])
+        b = cb.selectbox("Specimen B", range(len(opts)), index=1, format_func=lambda i: opts[i])
+        fields = [("Organism", "organism"), ("Substrate", "substrate"), ("Enzyme", "enzyme"),
+                  ("Mode", "fermentation_mode"), ("Norm Yield (U/g dry)", "norm_yield"), ("pH", "ph"),
+                  ("Temp (°C)", "temp_c"), ("Moisture (%)", "moisture_pct"), ("Time (hrs)", "time_hrs"),
+                  ("Supplements", "supplements")]
+        comp = pd.DataFrame({
+            "Metric": [f[0] for f in fields],
+            "Specimen A": [str(df.iloc[a][f[1]]) for f in fields],
+            "Specimen B": [str(df.iloc[b][f[1]]) for f in fields],
         })
-        st.dataframe(comp_df, hide_index=True, use_container_width=True)
+        st.dataframe(comp, hide_index=True, use_container_width=True)
 
-# --- 4. ADD / IMPORT DATA ---
+# ---------- 4. Add / Import ----------
 elif page == "Add / Import Data":
-    if "status_banner" in st.session_state and st.session_state["status_banner"]:
-        st.success(st.session_state["status_banner"])
-        st.session_state["status_banner"] = ""
+    if st.session_state.get("status_banner"):
+        st.success(st.session_state.pop("status_banner"))
 
-    if github_configured():
-        st.info(f"Connected to GitHub repository `{GITHUB_REPO}` (`{GITHUB_CSV_PATH}` on branch `{GITHUB_BRANCH}`). New records will be committed automatically.")
+    if GH_OK:
+        st.info(f"Connected to GitHub `{GH_REPO}` (`{GH_PATH}` on `{GH_BRANCH}`). New records commit automatically.")
     else:
-        st.warning("Add `GITHUB_TOKEN` and `GITHUB_REPO` in Streamlit App Settings → Secrets so uploaded records commit permanently to your GitHub CSV.")
+        st.warning("Add `GITHUB_TOKEN` and `GITHUB_REPO` in Streamlit Secrets to commit uploads permanently.")
 
-    tab_single, tab_csv = st.tabs(["Add Single Specimen", "Import CSV File"])
-    with tab_single:
+    tab_one, tab_csv = st.tabs(["Add Single Specimen", "Import CSV File"])
+
+    with tab_one:
         with st.form("single_entry"):
             a, b = st.columns(2)
             org = a.text_input("Organism")
@@ -685,38 +387,22 @@ elif page == "Add / Import Data":
             mode = a.selectbox("Mode", ["SSF", "SmF"])
             ry = a.number_input("Raw Yield", min_value=0.0, value=0.0)
             ru = a.selectbox("Unit", ["U/g dry", "U/g wet", "U/mL"])
-
             mo = b.number_input("Moisture %", min_value=0.0, max_value=100.0, value=60.0)
             ph = b.number_input("pH", value=5.0)
             tc = b.number_input("Temp (°C)", value=30.0)
             hr = b.number_input("Time (hrs)", value=72.0)
             sp = b.text_input("Supplements", value="None")
             rf = b.text_input("DOI / Reference", value="Unknown")
-
             if st.form_submit_button("Save Specimen"):
                 if org.strip() and sub.strip() and enz.strip() and ry > 0:
-                    ny, cf = normalize_yield(ry, ru, mo)
-                    row = (
-                        org.strip(),
-                        sub.strip().title(),
-                        enz.strip().lower(),
-                        ry,
-                        ru,
-                        mo,
-                        ph,
-                        tc,
-                        hr,
-                        sp.strip() or "None",
-                        ny,
-                        cf,
-                        rf.strip() or "Unknown",
-                        mode,
-                    )
-                    inserted, gh_ok, gh_msg = save_records_and_commit_github([row])
-                    sync_note = "and synced to GitHub." if gh_ok else f"({gh_msg})"
+                    row = make_row({"organism": org, "substrate": sub.title(), "enzyme": enz.lower(),
+                                    "raw_yield": ry, "raw_unit": ru, "moisture_pct": mo, "ph": ph,
+                                    "temp_c": tc, "time_hrs": hr, "supplements": sp, "reference": rf,
+                                    "fermentation_mode": mode}, recompute=True)
+                    n, ok, msg = save_records([row])
                     st.session_state["status_banner"] = (
-                        f"Database updated successfully ({inserted} new row added, normalized yield = {ny:.2f} U/g dry [{cf}]) {sync_note}"
-                    )
+                        f"Database updated ({n} new row, normalized yield = {row[10]:.2f} U/g dry [{row[11]}]) "
+                        + ("and synced to GitHub." if ok else f"({msg})"))
                     st.rerun()
                 else:
                     st.error("Fill in Organism, Substrate, Enzyme, and Raw Yield > 0.")
@@ -727,130 +413,75 @@ elif page == "Add / Import Data":
             up_df = pd.read_csv(up).fillna("")
             st.dataframe(up_df.head(8), use_container_width=True)
             if st.button("Import CSV Rows"):
-                rows_to_save = []
+                rows = []
                 for _, r in up_df.iterrows():
-                    o = str(r.get("organism", "")).strip()
-                    s = str(r.get("substrate", "")).strip().title()
-                    e = str(r.get("enzyme", "")).strip().lower()
-                    if not o or not s or not e:
-                        continue
-                    ry = to_float(r.get("raw_yield"), 0.0)
-                    ru = str(r.get("raw_unit", "U/g dry")).strip() or "U/g dry"
-                    mo = to_float(r.get("moisture_pct"), 50.0)
-                    ny, cf = normalize_yield(ry, ru, mo)
-                    mode = "SmF" if str(r.get("fermentation_mode", "SSF")).strip().lower() == "smf" else "SSF"
-                    rows_to_save.append(
-                        (
-                            o, s, e, ry, ru, mo,
-                            to_float(r.get("ph"), 7.0),
-                            to_float(r.get("temp_c"), 30.0),
-                            to_float(r.get("time_hrs"), 48.0),
-                            str(r.get("supplements") or "None").strip(),
-                            ny, cf,
-                            str(r.get("reference") or "Unknown").strip(),
-                            mode,
-                        )
-                    )
-                inserted, gh_ok, gh_msg = save_records_and_commit_github(rows_to_save)
-                sync_note = f"and committed to `{GITHUB_CSV_PATH}` on GitHub." if gh_ok else f"({gh_msg})"
+                    r = r.copy()
+                    r["substrate"] = str(r.get("substrate", "")).strip().title()
+                    r["enzyme"] = str(r.get("enzyme", "")).strip().lower()
+                    row = make_row(r, recompute=True)
+                    if row:
+                        rows.append(row)
+                n, ok, msg = save_records(rows)
                 st.session_state["status_banner"] = (
-                    f"Database updated successfully ({inserted} new record(s) imported) {sync_note}"
-                )
+                    f"Database updated ({n} new record(s) imported) "
+                    + (f"and committed to `{GH_PATH}` on GitHub." if ok else f"({msg})"))
                 st.rerun()
 
-# --- 5. MATPLOTLIB PLATES ---
+# ---------- 5. Plots ----------
 elif page == "Matplotlib Plates":
     st.subheader("📈 Custom Matplotlib Specimen Plates")
-    if not df.empty:
-        plt.style.use("dark_background")
+    plt.style.use("dark_background")
 
-        c_dim, c_metric = st.columns([1.2, 1])
-        focus_dim = c_dim.selectbox(
-            "1. What do you want to focus on?",
-            ["Substrate", "Organism", "Enzyme"],
-        )
-        agg_stat = c_metric.selectbox(
-            "2. Yield summary to plot",
-            ["Peak Yield (Max)", "Typical Yield (Median)", "All Individual Runs"],
-        )
+    c1, c2 = st.columns([1.2, 1])
+    focus = c1.selectbox("1. What do you want to focus on?", ["Substrate", "Organism", "Enzyme"])
+    stat = c2.selectbox("2. Yield summary to plot", ["Peak Yield (Max)", "Typical Yield (Median)", "All Individual Runs"])
 
-        col_map = {
-            "Substrate": ("substrate", "organism", "enzyme"),
-            "Organism": ("organism", "substrate", "enzyme"),
-            "Enzyme": ("enzyme", "organism", "substrate"),
-        }
-        primary_col, sec_col, tert_col = col_map[focus_dim]
+    others = {"Substrate": ["organism", "enzyme"], "Organism": ["substrate", "enzyme"], "Enzyme": ["organism", "substrate"]}
+    main = focus.lower()
+    sec, ter = others[focus]
+    items = sorted(df[main].dropna().unique())
+    picked = st.multiselect(f"3. Select one or more {focus}s to inspect", items, default=items[:3])
+    breakdown = st.selectbox("4. Plot / break down against", [sec.title(), ter.title(), "None (Direct Comparison)"])
 
-        available_items = sorted(df[primary_col].dropna().unique().tolist())
-        selected_items = st.multiselect(
-            f"3. Select one or more {focus_dim}s to inspect",
-            options=available_items,
-            default=available_items[:3],
-        )
+    sub_df = df[df[main].isin(picked)] if picked else df
+    if sub_df.empty:
+        st.warning("No records match your selection.")
+    else:
+        left, right = st.columns(2)
 
-        breakdown_by = st.selectbox(
-            "4. Plot / break down against",
-            [sec_col.title(), tert_col.title(), "None (Direct Comparison)"],
-        )
-
-        sub_df = df[df[primary_col].isin(selected_items)].copy() if selected_items else df.copy()
-
-        if sub_df.empty:
-            st.warning("No records match your selection.")
-        else:
-            left, right = st.columns(2)
-
-            with left:
-                fig, ax = plt.subplots(figsize=(6.8, 4.5))
-                fig.patch.set_facecolor("#121b22")
-                ax.set_facecolor("#121b22")
-
-                if agg_stat == "All Individual Runs":
-                    ordered = sub_df.sort_values("norm_yield", ascending=True)
-                    labels = [f"{r[primary_col]} | {r[sec_col]}" for _, r in ordered.iterrows()]
-                    ax.barh(labels, ordered["norm_yield"].values, color="#38bdf8")
-                    ax.set_ylabel(f"{focus_dim} & {sec_col.title()}")
+        with left:
+            fig, ax = plt.subplots(figsize=(6.8, 4.5))
+            fig.patch.set_facecolor("#121b22")
+            ax.set_facecolor("#121b22")
+            if stat == "All Individual Runs":
+                o = sub_df.sort_values("norm_yield")
+                ax.barh([f"{a} | {b}" for a, b in zip(o[main], o[sec])], o["norm_yield"], color="#38bdf8")
+            else:
+                fn = "max" if "Max" in stat else "median"
+                if breakdown.startswith("None"):
+                    g = sub_df.groupby(main)["norm_yield"].agg(fn).sort_values()
+                    ax.barh(g.index, g.values, color="#38bdf8")
                 else:
-                    stat_fn = "max" if "Max" in agg_stat else "median"
-                    if breakdown_by == "None (Direct Comparison)":
-                        grp = sub_df.groupby(primary_col)["norm_yield"].agg(stat_fn).sort_values(ascending=True)
-                        ax.barh(grp.index, grp.values, color="#38bdf8")
-                        ax.set_ylabel(focus_dim)
-                    else:
-                        b_col = breakdown_by.lower()
-                        piv = sub_df.pivot_table(
-                            index=primary_col,
-                            columns=b_col,
-                            values="norm_yield",
-                            aggfunc=stat_fn,
-                        )
-                        top_cats = sub_df.groupby(b_col)["norm_yield"].max().nlargest(6).index
-                        piv = piv[[c for c in top_cats if c in piv.columns]]
-                        piv.plot(kind="barh", ax=ax, width=0.78)
-                        ax.legend(title=breakdown_by, fontsize=8, title_fontsize=8)
-                        ax.set_ylabel(focus_dim)
+                    bc = breakdown.lower()
+                    piv = sub_df.pivot_table(index=main, columns=bc, values="norm_yield", aggfunc=fn)
+                    top = sub_df.groupby(bc)["norm_yield"].max().nlargest(6).index
+                    piv[[c for c in top if c in piv.columns]].plot(kind="barh", ax=ax, width=0.78)
+                    ax.legend(title=breakdown, fontsize=8, title_fontsize=8)
+            ax.set_ylabel(focus)
+            ax.set_xlabel(f"{stat} (U/g dry)")
+            ax.set_title(f"{focus} Yield Breakdown")
+            ax.grid(axis="x", linestyle="--", alpha=0.25)
+            plt.tight_layout()
+            st.pyplot(fig)
 
-                ax.set_xlabel(f"{agg_stat} (U/g dry)")
-                ax.set_title(f"{focus_dim} Yield Breakdown")
-                ax.grid(axis="x", linestyle="--", alpha=0.25)
-                plt.tight_layout()
-                st.pyplot(fig)
-
-            with right:
-                fig, ax = plt.subplots(figsize=(6.8, 4.5))
-                fig.patch.set_facecolor("#121b22")
-                ax.set_facecolor("#121b22")
-                ax.scatter(
-                    sub_df["temp_c"],
-                    sub_df["norm_yield"],
-                    c="#34d399",
-                    alpha=0.85,
-                    edgecolors="#0b1115",
-                    s=65,
-                )
-                ax.set_xlabel("Incubation Temperature (°C)")
-                ax.set_ylabel("Normalized Yield (U/g dry)")
-                ax.set_title("Temperature vs. Yield for Selected Items")
-                ax.grid(True, linestyle="--", alpha=0.25)
-                plt.tight_layout()
-                st.pyplot(fig)
+        with right:
+            fig, ax = plt.subplots(figsize=(6.8, 4.5))
+            fig.patch.set_facecolor("#121b22")
+            ax.set_facecolor("#121b22")
+            ax.scatter(sub_df["temp_c"], sub_df["norm_yield"], c="#34d399", alpha=0.85, edgecolors="#0b1115", s=65)
+            ax.set_xlabel("Incubation Temperature (°C)")
+            ax.set_ylabel("Normalized Yield (U/g dry)")
+            ax.set_title("Temperature vs. Yield for Selected Items")
+            ax.grid(True, linestyle="--", alpha=0.25)
+            plt.tight_layout()
+            st.pyplot(fig)
