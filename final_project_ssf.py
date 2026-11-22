@@ -1,5 +1,8 @@
+import base64
+import io
 import os
 import sqlite3
+import requests
 import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
@@ -13,6 +16,105 @@ st.set_page_config(
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "ssf_database.db")
+
+RECORD_COLUMNS = [
+    "organism",
+    "substrate",
+    "enzyme",
+    "raw_yield",
+    "raw_unit",
+    "moisture_pct",
+    "ph",
+    "temp_c",
+    "time_hrs",
+    "supplements",
+    "norm_yield",
+    "confidence",
+    "reference",
+    "fermentation_mode",
+]
+
+
+def _get_secret(key, default=""):
+    try:
+        if key in st.secrets:
+            return str(st.secrets[key]).strip()
+    except Exception:
+        pass
+    return os.environ.get(key, default).strip()
+
+
+GITHUB_TOKEN = _get_secret("GITHUB_TOKEN")
+GITHUB_REPO = _get_secret("GITHUB_REPO")  # e.g., "username/repo-name"
+GITHUB_BRANCH = _get_secret("GITHUB_BRANCH", "main")
+GITHUB_CSV_PATH = _get_secret("GITHUB_CSV_PATH", "data/user_uploads.csv")
+
+
+def github_configured():
+    return bool(GITHUB_TOKEN and GITHUB_REPO)
+
+
+def _github_headers():
+    return {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def fetch_github_csv():
+    """Fetch user_uploads.csv from GitHub. Returns (DataFrame, sha_or_None)."""
+    if not github_configured():
+        return pd.DataFrame(columns=RECORD_COLUMNS), None
+
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_CSV_PATH}"
+    resp = requests.get(url, headers=_github_headers(), params={"ref": GITHUB_BRANCH}, timeout=15)
+    if resp.status_code == 404:
+        return pd.DataFrame(columns=RECORD_COLUMNS), None
+    resp.raise_for_status()
+
+    payload = resp.json()
+    sha = payload.get("sha")
+    content_b64 = payload.get("content", "")
+    if not content_b64:
+        return pd.DataFrame(columns=RECORD_COLUMNS), sha
+
+    raw_bytes = base64.b64decode(content_b64)
+    if not raw_bytes.strip():
+        return pd.DataFrame(columns=RECORD_COLUMNS), sha
+
+    csv_df = pd.read_csv(io.BytesIO(raw_bytes))
+    for col in RECORD_COLUMNS:
+        if col not in csv_df.columns:
+            csv_df[col] = ""
+    return csv_df[RECORD_COLUMNS], sha
+
+
+def push_github_csv(df_user_rows, sha=None, commit_msg="Update user_uploads.csv from BioCatalyst Archive"):
+    """Commit updated user_uploads.csv back to GitHub."""
+    if not github_configured():
+        return False, "GitHub secrets (GITHUB_TOKEN / GITHUB_REPO) are not configured."
+
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_CSV_PATH}"
+    if sha is None:
+        check = requests.get(url, headers=_github_headers(), params={"ref": GITHUB_BRANCH}, timeout=15)
+        if check.status_code == 200:
+            sha = check.json().get("sha")
+
+    csv_bytes = df_user_rows[RECORD_COLUMNS].to_csv(index=False).encode("utf-8")
+    body = {
+        "message": commit_msg,
+        "content": base64.b64encode(csv_bytes).decode("ascii"),
+        "branch": GITHUB_BRANCH,
+    }
+    if sha:
+        body["sha"] = sha
+
+    put_resp = requests.put(url, headers=_github_headers(), json=body, timeout=20)
+    if put_resp.status_code in (200, 201):
+        return True, "Committed to GitHub"
+    return False, f"GitHub API error {put_resp.status_code}: {put_resp.text}"
+
 
 st.markdown(
     """
@@ -182,6 +284,78 @@ VERIFIED_SEED_DATA = [
     ("Aspergillus oryzae", "Coconut Oil Cake", "protease", 1372.0, "U/g dry", 55.0, 6.0, 30.0, 48.0, "Peptone", 1372.0, "HIGH", "10.1016/j.jfoodeng.2005.05.022", "SSF"),
 ]
 
+INSERT_SQL = """
+INSERT INTO ssf_experiments (
+    organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct,
+    ph, temp_c, time_hrs, supplements, norm_yield, confidence, reference, fermentation_mode
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+
+def to_float(x, default=0.0):
+    if x is None:
+        return default
+    try:
+        s = str(x).strip()
+        return float(s) if s and s.lower() != "nan" else default
+    except ValueError:
+        return default
+
+
+def _record_exists(cursor, row):
+    cursor.execute(
+        """
+        SELECT 1 FROM ssf_experiments
+        WHERE organism = ? AND substrate = ? AND enzyme = ?
+          AND ABS(COALESCE(raw_yield, 0) - COALESCE(?, 0)) < 1e-6
+          AND COALESCE(raw_unit, '') = COALESCE(?, '')
+          AND ABS(COALESCE(norm_yield, 0) - COALESCE(?, 0)) < 1e-6
+          AND COALESCE(reference, '') = COALESCE(?, '')
+          AND COALESCE(fermentation_mode, 'SSF') = COALESCE(?, 'SSF')
+        LIMIT 1
+        """,
+        (row[0], row[1], row[2], row[3], row[4], row[10], row[12], row[13]),
+    )
+    return cursor.fetchone() is not None
+
+
+def sync_from_github_into_db(cursor):
+    """Pull rows from GitHub CSV and insert any missing records into SQLite."""
+    if not github_configured():
+        return 0
+    try:
+        gh_df, _ = fetch_github_csv()
+    except Exception:
+        return 0
+
+    added = 0
+    for _, r in gh_df.iterrows():
+        org = str(r.get("organism", "")).strip()
+        sub = str(r.get("substrate", "")).strip()
+        enz = str(r.get("enzyme", "")).strip()
+        if not org or not sub or not enz:
+            continue
+        row = (
+            org,
+            sub,
+            enz,
+            to_float(r.get("raw_yield"), 0.0),
+            str(r.get("raw_unit", "U/g dry")).strip() or "U/g dry",
+            to_float(r.get("moisture_pct"), 50.0),
+            to_float(r.get("ph"), 5.0),
+            to_float(r.get("temp_c"), 30.0),
+            to_float(r.get("time_hrs"), 72.0),
+            str(r.get("supplements", "None")).strip() or "None",
+            to_float(r.get("norm_yield"), 0.0),
+            str(r.get("confidence", "LOW")).strip() or "LOW",
+            str(r.get("reference", "Unknown")).strip() or "Unknown",
+            str(r.get("fermentation_mode", "SSF")).strip() or "SSF",
+        )
+        if not _record_exists(cursor, row):
+            cursor.execute(INSERT_SQL, row)
+            added += 1
+    return added
+
 
 def init_db():
     conn = get_connection()
@@ -208,17 +382,11 @@ def init_db():
         cursor.execute("SELECT COUNT(*) FROM ssf_experiments")
         if cursor.fetchone()[0] == 0:
             for row in VERIFIED_SEED_DATA:
-                cursor.execute(
-                    """
-                    INSERT INTO ssf_experiments (
-                        organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct,
-                        ph, temp_c, time_hrs, supplements, norm_yield, confidence, reference, fermentation_mode
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    row,
-                )
+                cursor.execute(INSERT_SQL, row)
             conn.commit()
+
+        sync_from_github_into_db(cursor)
+        conn.commit()
     finally:
         conn.close()
 
@@ -226,14 +394,42 @@ def init_db():
 init_db()
 
 
-def to_float(x, default=0.0):
-    if x is None:
-        return default
+def save_records_and_commit_github(new_rows):
+    """Save new records into SQLite and commit updated user_uploads.csv to GitHub."""
+    if not new_rows:
+        return 0, False, "No valid rows to save."
+
+    conn = get_connection()
+    inserted = 0
     try:
-        s = str(x).strip()
-        return float(s) if s else default
-    except ValueError:
-        return default
+        cursor = conn.cursor()
+        for row in new_rows:
+            if not _record_exists(cursor, row):
+                cursor.execute(INSERT_SQL, row)
+                inserted += 1
+        conn.commit()
+    finally:
+        conn.close()
+
+    if not github_configured():
+        return inserted, False, "Saved locally in SQLite (configure GITHUB_TOKEN & GITHUB_REPO in Streamlit Secrets for permanent GitHub CSV sync)."
+
+    try:
+        gh_df, sha = fetch_github_csv()
+        new_df = pd.DataFrame(new_rows, columns=RECORD_COLUMNS)
+        combined = pd.concat([gh_df, new_df], ignore_index=True)
+        combined = combined.drop_duplicates(
+            subset=["organism", "substrate", "enzyme", "raw_yield", "raw_unit", "norm_yield", "reference", "fermentation_mode"],
+            keep="first",
+        )
+        ok, msg = push_github_csv(
+            combined,
+            sha=sha,
+            commit_msg=f"Add {inserted} specimen record(s) to {GITHUB_CSV_PATH}",
+        )
+        return inserted, ok, msg
+    except Exception as exc:
+        return inserted, False, f"Saved locally, but GitHub commit failed: {exc}"
 
 
 def normalize_yield(raw_yield, raw_unit, moisture_pct):
@@ -323,6 +519,10 @@ with st.sidebar:
     )
     st.markdown("---")
     st.caption(f"Catalogued specimens: {len(df)}")
+    if github_configured():
+        st.caption(f"GitHub CSV sync: Active ({GITHUB_CSV_PATH})")
+    else:
+        st.caption("GitHub CSV sync: Not configured")
 
 # --- MASTHEAD ---
 st.markdown(
@@ -466,6 +666,11 @@ elif page == "Head-to-Head Comparator":
 
 # --- 4. ADD / IMPORT DATA ---
 elif page == "Add / Import Data":
+    if github_configured():
+        st.info(f"Connected to GitHub repository `{GITHUB_REPO}` (`{GITHUB_CSV_PATH}` on branch `{GITHUB_BRANCH}`). New records will be committed automatically.")
+    else:
+        st.warning("Add `GITHUB_TOKEN` and `GITHUB_REPO` in Streamlit App Settings → Secrets so uploaded records commit permanently to your GitHub CSV.")
+
     tab_single, tab_csv = st.tabs(["Add Single Specimen", "Import CSV File"])
     with tab_single:
         with st.form("single_entry"):
@@ -487,21 +692,27 @@ elif page == "Add / Import Data":
             if st.form_submit_button("Save Specimen"):
                 if org.strip() and sub.strip() and enz.strip() and ry > 0:
                     ny, cf = normalize_yield(ry, ru, mo)
-                    conn = get_connection()
-                    try:
-                        conn.execute(
-                            """
-                            INSERT INTO ssf_experiments (
-                                organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct,
-                                ph, temp_c, time_hrs, supplements, norm_yield, confidence, reference, fermentation_mode
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (org.strip(), sub.strip().title(), enz.strip().lower(), ry, ru, mo, ph, tc, hr, sp.strip() or "None", ny, cf, rf.strip() or "Unknown", mode),
-                        )
-                        conn.commit()
-                    finally:
-                        conn.close()
-                    st.success(f"Saved! Normalized yield = {ny:.2f} U/g dry ({cf}).")
+                    row = (
+                        org.strip(),
+                        sub.strip().title(),
+                        enz.strip().lower(),
+                        ry,
+                        ru,
+                        mo,
+                        ph,
+                        tc,
+                        hr,
+                        sp.strip() or "None",
+                        ny,
+                        cf,
+                        rf.strip() or "Unknown",
+                        mode,
+                    )
+                    inserted, gh_ok, gh_msg = save_records_and_commit_github([row])
+                    if gh_ok:
+                        st.success(f"Saved & committed to GitHub! Normalized yield = {ny:.2f} U/g dry ({cf}).")
+                    else:
+                        st.warning(f"Inserted {inserted} row(s) in session DB. {gh_msg}")
                     st.rerun()
                 else:
                     st.error("Fill in Organism, Substrate, Enzyme, and Raw Yield > 0.")
@@ -512,43 +723,35 @@ elif page == "Add / Import Data":
             up_df = pd.read_csv(up).fillna("")
             st.dataframe(up_df.head(8), use_container_width=True)
             if st.button("Import CSV Rows"):
-                conn = get_connection()
-                inserted = 0
-                try:
-                    for _, r in up_df.iterrows():
-                        o = str(r.get("organism", "")).strip()
-                        s = str(r.get("substrate", "")).strip().title()
-                        e = str(r.get("enzyme", "")).strip().lower()
-                        if not o or not s or not e:
-                            continue
-                        ry = to_float(r.get("raw_yield"), 0.0)
-                        ru = str(r.get("raw_unit", "U/g dry")).strip() or "U/g dry"
-                        mo = to_float(r.get("moisture_pct"), 50.0)
-                        ny, cf = normalize_yield(ry, ru, mo)
-                        mode = "SmF" if str(r.get("fermentation_mode", "SSF")).strip().lower() == "smf" else "SSF"
-                        conn.execute(
-                            """
-                            INSERT INTO ssf_experiments (
-                                organism, substrate, enzyme, raw_yield, raw_unit, moisture_pct,
-                                ph, temp_c, time_hrs, supplements, norm_yield, confidence, reference, fermentation_mode
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (
-                                o, s, e, ry, ru, mo,
-                                to_float(r.get("ph"), 7.0),
-                                to_float(r.get("temp_c"), 30.0),
-                                to_float(r.get("time_hrs"), 48.0),
-                                str(r.get("supplements") or "None").strip(),
-                                ny, cf,
-                                str(r.get("reference") or "Unknown").strip(),
-                                mode,
-                            ),
+                rows_to_save = []
+                for _, r in up_df.iterrows():
+                    o = str(r.get("organism", "")).strip()
+                    s = str(r.get("substrate", "")).strip().title()
+                    e = str(r.get("enzyme", "")).strip().lower()
+                    if not o or not s or not e:
+                        continue
+                    ry = to_float(r.get("raw_yield"), 0.0)
+                    ru = str(r.get("raw_unit", "U/g dry")).strip() or "U/g dry"
+                    mo = to_float(r.get("moisture_pct"), 50.0)
+                    ny, cf = normalize_yield(ry, ru, mo)
+                    mode = "SmF" if str(r.get("fermentation_mode", "SSF")).strip().lower() == "smf" else "SSF"
+                    rows_to_save.append(
+                        (
+                            o, s, e, ry, ru, mo,
+                            to_float(r.get("ph"), 7.0),
+                            to_float(r.get("temp_c"), 30.0),
+                            to_float(r.get("time_hrs"), 48.0),
+                            str(r.get("supplements") or "None").strip(),
+                            ny, cf,
+                            str(r.get("reference") or "Unknown").strip(),
+                            mode,
                         )
-                        inserted += 1
-                    conn.commit()
-                finally:
-                    conn.close()
-                st.success(f"Imported {inserted} records.")
+                    )
+                inserted, gh_ok, gh_msg = save_records_and_commit_github(rows_to_save)
+                if gh_ok:
+                    st.success(f"Imported {inserted} records and committed to `{GITHUB_CSV_PATH}` on GitHub!")
+                else:
+                    st.warning(f"Imported {inserted} records locally. {gh_msg}")
                 st.rerun()
 
 # --- 5. MATPLOTLIB PLATES ---
